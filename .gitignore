@@ -1,0 +1,27 @@
+# Dependencies and tool caches
+node_modules/
+.cache/
+*.tsbuildinfo
+
+# Test results
+coverage/
+.nyc_output/
+
+# Local firmware build output and temporary files
+/build/
+/artifacts/
+/tmp/
+*.log
+
+# Local environment settings (keep the shareable example)
+.env
+.env.*
+!.env.example
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Keep dist/ tracked: GitHub Actions executes the bundled JavaScript directly.
+# Keep package-lock.json tracked for reproducible dependency installation.

@@ -1,0 +1,37 @@
+{
+  "name": "gpbuilder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build orchestrator for GP2040-CE, usable locally and as a GitHub Action.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/becauseimclever/GPBuilder.git"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "esbuild src/cli.ts src/action.ts --bundle --platform=node --target=node24 --format=cjs --outdir=dist --out-extension:.js=.cjs",
+    "start": "node dist/cli.cjs",
+    "prestart": "npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "npm run lint -- --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

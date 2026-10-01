@@ -1,0 +1,14 @@
+name: GPBuilder
+description: Check GP2040-CE host prerequisites and install missing tools on Ubuntu Actions runners. Firmware builds are not implemented yet.
+author: becauseimclever
+inputs:
+  command:
+    description: 'Operation: check-prerequisites or build (build is not implemented yet).'
+    required: false
+    default: check-prerequisites
+branding:
+  icon: cpu
+  color: green
+runs:
+  using: node24
+  main: dist/action.cjs
