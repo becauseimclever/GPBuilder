@@ -350,16 +350,137 @@ function checkPrerequisites(options) {
   return results;
 }
 
-// src/orchestrator.ts
-function run(options) {
-  const results = checkPrerequisites(options);
-  const failed = results.filter((result) => result.status !== "available");
-  if (failed.length > 0) {
-    throw new Error(`Prerequisite check failed: ${failed.map((result) => result.name).join(", ")}. See the report for installation guidance.`);
+// src/build-selection.ts
+var import_node_child_process2 = require("node:child_process");
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+var releasePattern = /^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
+var boardPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+function git(firmware, args) {
+  try {
+    return (0, import_node_child_process2.execFileSync)("git", ["-C", (0, import_node_path2.resolve)(firmware), ...args], {
+      encoding: "utf8",
+      timeout: 1e4,
+      maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot read firmware repository at ${(0, import_node_path2.resolve)(firmware)}. Ensure Git is installed and the checkout/tag is available locally. ${detail}`, { cause: error });
   }
+}
+function listReleases(firmware) {
+  if (git(firmware, ["rev-parse", "--is-inside-work-tree", "--show-prefix"]).trim() !== "true") {
+    throw new Error("The firmware directory must be the repository root of a local Git checkout.");
+  }
+  return git(firmware, ["for-each-ref", "--format=%(refname:strip=2)", "refs/tags"]).split(/\r?\n/).filter((tag) => releasePattern.test(tag)).sort((left, right) => right.localeCompare(left, "en", { numeric: true }));
+}
+function releaseCommit(firmware, release) {
+  if (!releasePattern.test(release)) throw new Error("Select an exact release tag such as v0.7.10.");
+  if (!listReleases(firmware).includes(release)) {
+    throw new Error(`Release ${release} is not available locally. Fetch the desired tag into the firmware checkout first.`);
+  }
+  const commit = git(firmware, ["rev-parse", "--verify", `refs/tags/${release}^{commit}`]).trim();
+  const root = git(firmware, ["ls-tree", "-z", commit, "--", "CMakeLists.txt"]);
+  if (!/^100(?:644|755) blob [a-f0-9]+\tCMakeLists\.txt\0$/.test(root)) {
+    throw new Error(`Release ${release} does not contain a regular root CMakeLists.txt.`);
+  }
+  return commit;
+}
+function externalDirectory(configs) {
+  try {
+    const directory = (0, import_node_fs2.realpathSync)((0, import_node_path2.resolve)(configs));
+    if (!(0, import_node_fs2.lstatSync)(directory).isDirectory()) throw new Error("Not a directory");
+    return directory;
+  } catch (error) {
+    throw new Error(`Cannot read external config directory: ${(0, import_node_path2.resolve)(configs)}`, { cause: error });
+  }
+}
+function discoverBoards(firmware, commit, configs) {
+  let boards;
+  if (configs !== void 0) {
+    const directory = externalDirectory(configs);
+    try {
+      boards = (0, import_node_fs2.readdirSync)(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory() && boardPattern.test(entry.name)).filter((entry) => {
+        try {
+          return (0, import_node_fs2.lstatSync)((0, import_node_path2.join)(directory, entry.name, "BoardConfig.h")).isFile();
+        } catch {
+          return false;
+        }
+      }).map((entry) => entry.name);
+    } catch (error) {
+      throw new Error(`Cannot read external config directory: ${directory}`, { cause: error });
+    }
+  } else {
+    boards = git(firmware, ["ls-tree", "-r", "-z", commit, "--", "configs"]).split("\0").flatMap((record) => {
+      const match = /^100(?:644|755) blob [a-f0-9]+\tconfigs\/([^/]+)\/BoardConfig\.h$/.exec(record);
+      const board = match?.[1];
+      return board && boardPattern.test(board) ? [board] : [];
+    });
+  }
+  return boards.sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
+}
+function listBoards(firmware, release, configs) {
+  return discoverBoards(firmware, releaseCommit(firmware, release), configs);
+}
+function selectBuild(firmware, release, board, configs) {
+  if (!boardPattern.test(board)) throw new Error("Select a board name, not a path.");
+  const commit = releaseCommit(firmware, release);
+  const boards = discoverBoards(firmware, commit, configs);
+  if (!boards.includes(board)) {
+    throw new Error(`Unknown board ${board} in ${configs === void 0 ? `release ${release}` : "external configs"}. Use list-boards to see available names.`);
+  }
+  return {
+    firmware: (0, import_node_path2.resolve)(firmware),
+    release,
+    commit,
+    board,
+    configSource: configs === void 0 ? "firmware" : "external",
+    configPath: configs === void 0 ? `configs/${board}` : (0, import_node_path2.join)(externalDirectory(configs), board)
+  };
+}
+
+// src/orchestrator.ts
+var operations = ["check-prerequisites", "list-releases", "list-boards", "select-build", "build"];
+function required(options, name) {
+  const value = options[name];
+  if (!value?.trim()) throw new Error(`The ${name} input is required for ${options.operation}.`);
+  return value;
+}
+function run(options) {
+  if (options.operation === "check-prerequisites" || options.operation === "build") {
+    const results = checkPrerequisites(options);
+    const failed = results.filter((result) => result.status !== "available");
+    if (failed.length > 0) {
+      throw new Error(`Prerequisite check failed: ${failed.map((result) => result.name).join(", ")}. See the report for installation guidance.`);
+    }
+    if (options.operation === "check-prerequisites") return {};
+  }
+  const firmware = required(options, "firmware");
+  if (options.operation === "list-releases") {
+    const releases = listReleases(firmware);
+    for (const release2 of releases) options.log(release2);
+    return { releases };
+  }
+  const release = required(options, "release");
+  if (options.configs !== void 0 && !options.configs.trim()) throw new Error("The configs input must be a non-empty directory path.");
+  if (options.operation === "list-boards") {
+    const boards = listBoards(firmware, release, options.configs);
+    for (const board of boards) options.log(board);
+    return { boards };
+  }
+  const selection = selectBuild(firmware, release, required(options, "board"), options.configs);
+  options.log(`Release: ${selection.release}
+Firmware commit: ${selection.commit}
+Board: ${selection.board}
+Config source: ${selection.configSource}
+Config path: ${selection.configPath}`);
   if (options.operation === "build") {
     throw new Error("Firmware build orchestration is not implemented yet. Prerequisites passed; no firmware was built.");
   }
+  options.log("Selection validated; no firmware was built.");
+  return { selection };
 }
 
 // src/cli.ts
@@ -367,21 +488,51 @@ try {
   const { values } = (0, import_node_util.parseArgs)({
     options: {
       "check-prerequisites": { type: "boolean" },
+      "list-releases": { type: "boolean" },
+      "list-boards": { type: "boolean" },
+      "select-build": { type: "boolean" },
       build: { type: "boolean" },
+      firmware: { type: "string" },
+      release: { type: "string" },
+      board: { type: "string" },
+      configs: { type: "string" },
       help: { type: "boolean", short: "h" }
     },
     allowPositionals: false
   });
-  if (values["check-prerequisites"] && values.build) {
-    throw new Error("Choose --check-prerequisites or --build, not both. Builds always check prerequisites.");
+  const selected = operations.filter((operation2) => values[operation2]);
+  if (selected.length > 1) {
+    throw new Error("Choose one operation. Builds always check prerequisites.");
   }
-  if (values.help || !values["check-prerequisites"] && !values.build) {
-    console.log("GPBuilder\n\nUsage: node dist/cli.cjs [--check-prerequisites | --build | --help]\n\n--check-prerequisites  Report host tools without installing anything.\n--build                Check prerequisites, then request a firmware build (not implemented).");
+  const operation = selected[0];
+  if (!values.help && operation === void 0 && [values.firmware, values.release, values.board, values.configs].some((value) => value !== void 0)) {
+    throw new Error("Choose an operation, such as --select-build or --list-boards.");
+  }
+  if (values.help || operation === void 0) {
+    console.log(`GPBuilder
+
+Usage: node dist/cli.cjs <operation> [options]
+
+--check-prerequisites  Report host tools without installing anything.
+--list-releases        List local release tags; requires --firmware.
+--list-boards          List boards; requires --firmware and --release.
+--select-build         Validate --firmware, --release, and --board without building.
+--build                Check prerequisites and selection; compilation is not implemented.
+--help                Show this help.
+
+--firmware <path>      Local GP2040-CE Git checkout.
+--release <tag>        Exact local release tag (for example v0.7.10).
+--board <name>         Exact, case-sensitive board directory name.
+--configs <path>       External directory containing board folders; replaces built-in configs.`);
   } else {
     run({
       mode: "local",
       log: console.log,
-      operation: values.build ? "build" : "check-prerequisites"
+      operation,
+      ...values.firmware !== void 0 && { firmware: values.firmware },
+      ...values.release !== void 0 && { release: values.release },
+      ...values.board !== void 0 && { board: values.board },
+      ...values.configs !== void 0 && { configs: values.configs }
     });
   }
 } catch (error) {

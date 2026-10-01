@@ -2146,9 +2146,9 @@ var require_dispatcher_base = __commonJS({
       }
       close(callback) {
         if (callback === void 0) {
-          return new Promise((resolve, reject) => {
+          return new Promise((resolve2, reject) => {
             this.close((err, data) => {
-              return err ? reject(err) : resolve(data);
+              return err ? reject(err) : resolve2(data);
             });
           });
         }
@@ -2186,12 +2186,12 @@ var require_dispatcher_base = __commonJS({
           err = null;
         }
         if (callback === void 0) {
-          return new Promise((resolve, reject) => {
+          return new Promise((resolve2, reject) => {
             this.destroy(err, (err2, data) => {
               return err2 ? (
                 /* istanbul ignore next: should never error */
                 reject(err2)
-              ) : resolve(data);
+              ) : resolve2(data);
             });
           });
         }
@@ -3878,8 +3878,8 @@ var require_webidl = __commonJS({
           });
         }
         for (const options of converters) {
-          const { key, defaultValue, required, converter } = options;
-          if (required === true) {
+          const { key, defaultValue, required: required2, converter } = options;
+          if (required2 === true) {
             if (!Object.hasOwn(dictionary, key)) {
               throw webidl.errors.exception({
                 header: prefix,
@@ -3892,7 +3892,7 @@ var require_webidl = __commonJS({
           if (hasDefault && value !== null) {
             value ??= defaultValue();
           }
-          if (required || hasDefault || value !== void 0) {
+          if (required2 || hasDefault || value !== void 0) {
             value = converter(value, prefix, `${argument}.${key}`);
             if (options.allowedValues && !options.allowedValues.includes(value)) {
               throw webidl.errors.exception({
@@ -4073,11 +4073,11 @@ var require_util2 = __commonJS({
     var { isUint8Array } = require("node:util/types");
     var { webidl } = require_webidl();
     var supportedHashes = [];
-    var crypto;
+    var crypto2;
     try {
-      crypto = require("node:crypto");
+      crypto2 = require("node:crypto");
       const possibleRelevantHashes = ["sha256", "sha384", "sha512"];
-      supportedHashes = crypto.getHashes().filter((hash) => possibleRelevantHashes.includes(hash));
+      supportedHashes = crypto2.getHashes().filter((hash) => possibleRelevantHashes.includes(hash));
     } catch {
     }
     function responseURL(response) {
@@ -4350,7 +4350,7 @@ var require_util2 = __commonJS({
       }
     }
     function bytesMatch(bytes, metadataList) {
-      if (crypto === void 0) {
+      if (crypto2 === void 0) {
         return true;
       }
       const parsedMetadata = parseMetadata(metadataList);
@@ -4365,7 +4365,7 @@ var require_util2 = __commonJS({
       for (const item of metadata) {
         const algorithm = item.algo;
         const expectedValue = item.hash;
-        let actualValue = crypto.createHash(algorithm).update(bytes).digest("base64");
+        let actualValue = crypto2.createHash(algorithm).update(bytes).digest("base64");
         if (actualValue[actualValue.length - 1] === "=") {
           if (actualValue[actualValue.length - 2] === "=") {
             actualValue = actualValue.slice(0, -2);
@@ -4458,8 +4458,8 @@ var require_util2 = __commonJS({
     function createDeferredPromise() {
       let res;
       let rej;
-      const promise = new Promise((resolve, reject) => {
-        res = resolve;
+      const promise = new Promise((resolve2, reject) => {
+        res = resolve2;
         rej = reject;
       });
       return { promise, resolve: res, reject: rej };
@@ -5429,8 +5429,8 @@ var require_body = __commonJS({
     var { multipartFormDataParser } = require_formdata_parser();
     var random;
     try {
-      const crypto = require("node:crypto");
-      random = (max) => crypto.randomInt(0, max);
+      const crypto2 = require("node:crypto");
+      random = (max) => crypto2.randomInt(0, max);
     } catch {
       random = (max) => Math.floor(Math.random(max));
     }
@@ -6711,12 +6711,12 @@ upgrade: ${upgrade}\r
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve, reject) => {
+      const waitForDrain = () => new Promise((resolve2, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve;
+          callback = resolve2;
         }
       });
       socket.on("close", onDrain).on("drain", onDrain);
@@ -7388,12 +7388,12 @@ var require_client_h2 = __commonJS({
           cb();
         }
       }
-      const waitForDrain = () => new Promise((resolve, reject) => {
+      const waitForDrain = () => new Promise((resolve2, reject) => {
         assert(callback === null);
         if (socket[kError]) {
           reject(socket[kError]);
         } else {
-          callback = resolve;
+          callback = resolve2;
         }
       });
       h2stream.on("close", onDrain).on("drain", onDrain);
@@ -7871,16 +7871,16 @@ var require_client = __commonJS({
         return this[kNeedDrain] < 2;
       }
       async [kClose]() {
-        return new Promise((resolve) => {
+        return new Promise((resolve2) => {
           if (this[kSize]) {
-            this[kClosedResolve] = resolve;
+            this[kClosedResolve] = resolve2;
           } else {
-            resolve(null);
+            resolve2(null);
           }
         });
       }
       async [kDestroy](err) {
-        return new Promise((resolve) => {
+        return new Promise((resolve2) => {
           const requests = this[kQueue].splice(this[kPendingIdx]);
           for (let i = 0; i < requests.length; i++) {
             const request = requests[i];
@@ -7891,7 +7891,7 @@ var require_client = __commonJS({
               this[kClosedResolve]();
               this[kClosedResolve] = null;
             }
-            resolve(null);
+            resolve2(null);
           };
           if (this[kHTTPContext]) {
             this[kHTTPContext].destroy(err, callback);
@@ -7942,7 +7942,7 @@ var require_client = __commonJS({
         });
       }
       try {
-        const socket = await new Promise((resolve, reject) => {
+        const socket = await new Promise((resolve2, reject) => {
           client[kConnector]({
             host,
             hostname,
@@ -7954,7 +7954,7 @@ var require_client = __commonJS({
             if (err) {
               reject(err);
             } else {
-              resolve(socket2);
+              resolve2(socket2);
             }
           });
         });
@@ -8290,8 +8290,8 @@ var require_pool_base = __commonJS({
         if (this[kQueue].isEmpty()) {
           await Promise.all(this[kClients].map((c) => c.close()));
         } else {
-          await new Promise((resolve) => {
-            this[kClosedResolve] = resolve;
+          await new Promise((resolve2) => {
+            this[kClosedResolve] = resolve2;
           });
         }
       }
@@ -9557,7 +9557,7 @@ var require_readable = __commonJS({
         if (this._readableState.closeEmitted) {
           return null;
         }
-        return await new Promise((resolve, reject) => {
+        return await new Promise((resolve2, reject) => {
           if (this[kContentLength] > limit) {
             this.destroy(new AbortError());
           }
@@ -9570,7 +9570,7 @@ var require_readable = __commonJS({
             if (signal?.aborted) {
               reject(signal.reason ?? new AbortError());
             } else {
-              resolve(null);
+              resolve2(null);
             }
           }).on("error", noop).on("data", function(chunk) {
             limit -= chunk.length;
@@ -9589,7 +9589,7 @@ var require_readable = __commonJS({
     }
     async function consume(stream, type) {
       assert(!stream[kConsume]);
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve2, reject) => {
         if (isUnusable(stream)) {
           const rState = stream._readableState;
           if (rState.destroyed && rState.closeEmitted === false) {
@@ -9606,7 +9606,7 @@ var require_readable = __commonJS({
             stream[kConsume] = {
               type,
               stream,
-              resolve,
+              resolve: resolve2,
               reject,
               length: 0,
               body: []
@@ -9676,18 +9676,18 @@ var require_readable = __commonJS({
       return buffer;
     }
     function consumeEnd(consume2) {
-      const { type, body, resolve, stream, length } = consume2;
+      const { type, body, resolve: resolve2, stream, length } = consume2;
       try {
         if (type === "text") {
-          resolve(chunksDecode(body, length));
+          resolve2(chunksDecode(body, length));
         } else if (type === "json") {
-          resolve(JSON.parse(chunksDecode(body, length)));
+          resolve2(JSON.parse(chunksDecode(body, length)));
         } else if (type === "arrayBuffer") {
-          resolve(chunksConcat(body, length).buffer);
+          resolve2(chunksConcat(body, length).buffer);
         } else if (type === "blob") {
-          resolve(new Blob(body, { type: stream[kContentType] }));
+          resolve2(new Blob(body, { type: stream[kContentType] }));
         } else if (type === "bytes") {
-          resolve(chunksConcat(body, length));
+          resolve2(chunksConcat(body, length));
         }
         consumeFinish(consume2);
       } catch (err) {
@@ -9944,9 +9944,9 @@ var require_api_request = __commonJS({
     };
     function request(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           request.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -10169,9 +10169,9 @@ var require_api_stream = __commonJS({
     };
     function stream(opts, factory, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           stream.call(this, opts, factory, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -10456,9 +10456,9 @@ var require_api_upgrade = __commonJS({
     };
     function upgrade(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           upgrade.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -10550,9 +10550,9 @@ var require_api_connect = __commonJS({
     };
     function connect(opts, callback) {
       if (callback === void 0) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           connect.call(this, opts, (err, data) => {
-            return err ? reject(err) : resolve(data);
+            return err ? reject(err) : resolve2(data);
           });
         });
       }
@@ -14414,7 +14414,7 @@ var require_fetch = __commonJS({
       function dispatch({ body }) {
         const url = requestCurrentURL(request);
         const agent = fetchParams.controller.dispatcher;
-        return new Promise((resolve, reject) => agent.dispatch(
+        return new Promise((resolve2, reject) => agent.dispatch(
           {
             path: url.pathname + url.search,
             origin: url.origin,
@@ -14490,7 +14490,7 @@ var require_fetch = __commonJS({
                 }
               }
               const onError = this.onError.bind(this);
-              resolve({
+              resolve2({
                 status,
                 statusText,
                 headersList,
@@ -14536,7 +14536,7 @@ var require_fetch = __commonJS({
               for (let i = 0; i < rawHeaders.length; i += 2) {
                 headersList.append(bufferToLowerCasedHeaderName(rawHeaders[i]), rawHeaders[i + 1].toString("latin1"), true);
               }
-              resolve({
+              resolve2({
                 status,
                 statusText: STATUS_CODES[status],
                 headersList,
@@ -15540,7 +15540,7 @@ var require_cache = __commonJS({
         }
         const p = Promise.all(responsePromises);
         const responses = await p;
-        const operations = [];
+        const operations2 = [];
         let index = 0;
         for (const response of responses) {
           const operation = {
@@ -15551,13 +15551,13 @@ var require_cache = __commonJS({
             response
             // 7.3.4
           };
-          operations.push(operation);
+          operations2.push(operation);
           index++;
         }
         const cacheJobPromise = createDeferredPromise();
         let errorData = null;
         try {
-          this.#batchCacheOperations(operations);
+          this.#batchCacheOperations(operations2);
         } catch (e) {
           errorData = e;
         }
@@ -15621,7 +15621,7 @@ var require_cache = __commonJS({
         } else {
           bodyReadPromise.resolve(void 0);
         }
-        const operations = [];
+        const operations2 = [];
         const operation = {
           type: "put",
           // 14.
@@ -15630,7 +15630,7 @@ var require_cache = __commonJS({
           response: clonedResponse
           // 16.
         };
-        operations.push(operation);
+        operations2.push(operation);
         const bytes = await bodyReadPromise.promise;
         if (clonedResponse.body != null) {
           clonedResponse.body.source = bytes;
@@ -15638,7 +15638,7 @@ var require_cache = __commonJS({
         const cacheJobPromise = createDeferredPromise();
         let errorData = null;
         try {
-          this.#batchCacheOperations(operations);
+          this.#batchCacheOperations(operations2);
         } catch (e) {
           errorData = e;
         }
@@ -15667,18 +15667,18 @@ var require_cache = __commonJS({
           assert(typeof request === "string");
           r = new Request(request)[kState];
         }
-        const operations = [];
+        const operations2 = [];
         const operation = {
           type: "delete",
           request: r,
           options
         };
-        operations.push(operation);
+        operations2.push(operation);
         const cacheJobPromise = createDeferredPromise();
         let errorData = null;
         let requestResponses;
         try {
-          requestResponses = this.#batchCacheOperations(operations);
+          requestResponses = this.#batchCacheOperations(operations2);
         } catch (e) {
           errorData = e;
         }
@@ -15744,13 +15744,13 @@ var require_cache = __commonJS({
        * @param {CacheBatchOperation[]} operations
        * @returns {requestResponseList}
        */
-      #batchCacheOperations(operations) {
+      #batchCacheOperations(operations2) {
         const cache = this.#relevantRequestResponseList;
         const backupCache = [...cache];
         const addedItems = [];
         const resultList = [];
         try {
-          for (const operation of operations) {
+          for (const operation of operations2) {
             if (operation.type !== "delete" && operation.type !== "put") {
               throw webidl.errors.exception({
                 header: "Cache.#batchCacheOperations",
@@ -17070,13 +17070,13 @@ var require_frame = __commonJS({
     "use strict";
     var { maxUnsigned16Bit } = require_constants5();
     var BUFFER_SIZE = 16386;
-    var crypto;
+    var crypto2;
     var buffer = null;
     var bufIdx = BUFFER_SIZE;
     try {
-      crypto = require("node:crypto");
+      crypto2 = require("node:crypto");
     } catch {
-      crypto = {
+      crypto2 = {
         // not full compatibility, but minimum.
         randomFillSync: function randomFillSync(buffer2, _offset, _size) {
           for (let i = 0; i < buffer2.length; ++i) {
@@ -17089,7 +17089,7 @@ var require_frame = __commonJS({
     function generateMask() {
       if (bufIdx === BUFFER_SIZE) {
         bufIdx = 0;
-        crypto.randomFillSync(buffer ??= Buffer.allocUnsafe(BUFFER_SIZE), 0, BUFFER_SIZE);
+        crypto2.randomFillSync(buffer ??= Buffer.allocUnsafe(BUFFER_SIZE), 0, BUFFER_SIZE);
       }
       return [buffer[bufIdx++], buffer[bufIdx++], buffer[bufIdx++], buffer[bufIdx++]];
     }
@@ -17161,9 +17161,9 @@ var require_connection = __commonJS({
     var { Headers: Headers2, getHeadersList } = require_headers();
     var { getDecodeSplit } = require_util2();
     var { WebsocketFrameSend } = require_frame();
-    var crypto;
+    var crypto2;
     try {
-      crypto = require("node:crypto");
+      crypto2 = require("node:crypto");
     } catch {
     }
     function establishWebSocketConnection(url, protocols, client, ws, onEstablish, options) {
@@ -17183,7 +17183,7 @@ var require_connection = __commonJS({
         const headersList = getHeadersList(new Headers2(options.headers));
         request.headersList = headersList;
       }
-      const keyValue = crypto.randomBytes(16).toString("base64");
+      const keyValue = crypto2.randomBytes(16).toString("base64");
       request.headersList.append("sec-websocket-key", keyValue);
       request.headersList.append("sec-websocket-version", "13");
       for (const protocol of protocols) {
@@ -17213,7 +17213,7 @@ var require_connection = __commonJS({
             return;
           }
           const secWSAccept = response.headersList.get("Sec-WebSocket-Accept");
-          const digest = crypto.createHash("sha1").update(keyValue + uid).digest("base64");
+          const digest = crypto2.createHash("sha1").update(keyValue + uid).digest("base64");
           if (secWSAccept !== digest) {
             failWebsocketConnection(ws, "Incorrect hash received in Sec-WebSocket-Accept header.");
             return;
@@ -18267,8 +18267,8 @@ var require_util8 = __commonJS({
       return true;
     }
     function delay(ms) {
-      return new Promise((resolve) => {
-        setTimeout(resolve, ms).unref();
+      return new Promise((resolve2) => {
+        setTimeout(resolve2, ms).unref();
       });
     }
     module2.exports = {
@@ -19129,8 +19129,36 @@ function escapeProperty(s) {
   return toCommandValue(s).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A").replace(/:/g, "%3A").replace(/,/g, "%2C");
 }
 
+// node_modules/@actions/core/lib/file-command.js
+var crypto = __toESM(require("crypto"), 1);
+var fs = __toESM(require("fs"), 1);
+var os2 = __toESM(require("os"), 1);
+function issueFileCommand(command, message) {
+  const filePath = process.env[`GITHUB_${command}`];
+  if (!filePath) {
+    throw new Error(`Unable to find environment variable for file command ${command}`);
+  }
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Missing file at path: ${filePath}`);
+  }
+  fs.appendFileSync(filePath, `${toCommandValue(message)}${os2.EOL}`, {
+    encoding: "utf8"
+  });
+}
+function prepareKeyValueMessage(key, value) {
+  const delimiter = `ghadelimiter_${crypto.randomUUID()}`;
+  const convertedValue = toCommandValue(value);
+  if (key.includes(delimiter)) {
+    throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+  }
+  if (convertedValue.includes(delimiter)) {
+    throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+  }
+  return `${key}<<${delimiter}${os2.EOL}${convertedValue}${os2.EOL}${delimiter}`;
+}
+
 // node_modules/@actions/core/lib/core.js
-var os3 = __toESM(require("os"), 1);
+var os4 = __toESM(require("os"), 1);
 
 // node_modules/@actions/http-client/lib/index.js
 var tunnel = __toESM(require_tunnel2(), 1);
@@ -19192,11 +19220,11 @@ var import_os = require("os");
 var import_fs = require("fs");
 var __awaiter = function(thisArg, _arguments, P, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve) {
-      resolve(value);
+    return value instanceof P ? value : new P(function(resolve2) {
+      resolve2(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve, reject) {
+  return new (P || (P = Promise))(function(resolve2, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -19212,7 +19240,7 @@ var __awaiter = function(thisArg, _arguments, P, generator) {
       }
     }
     function step(result) {
-      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+      result.done ? resolve2(result.value) : adopt(result.value).then(fulfilled, rejected);
     }
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
@@ -19475,10 +19503,10 @@ var _summary = new Summary();
 var import_os2 = __toESM(require("os"), 1);
 
 // node_modules/@actions/io/lib/io-util.js
-var fs = __toESM(require("fs"), 1);
-var { chmod, copyFile, lstat, mkdir, open, readdir, rename, rm, rmdir, stat, symlink, unlink } = fs.promises;
+var fs2 = __toESM(require("fs"), 1);
+var { chmod, copyFile, lstat, mkdir, open, readdir, rename, rm, rmdir, stat, symlink, unlink } = fs2.promises;
 var IS_WINDOWS = process.platform === "win32";
-var READONLY = fs.constants.O_RDONLY;
+var READONLY = fs2.constants.O_RDONLY;
 
 // node_modules/@actions/exec/lib/toolrunner.js
 var IS_WINDOWS2 = process.platform === "win32";
@@ -19503,6 +19531,14 @@ function getInput(name, options) {
   }
   return val.trim();
 }
+function setOutput(name, value) {
+  const filePath = process.env["GITHUB_OUTPUT"] || "";
+  if (filePath) {
+    return issueFileCommand("OUTPUT", prepareKeyValueMessage(name, value));
+  }
+  process.stdout.write(os4.EOL);
+  issueCommand("set-output", { name }, toCommandValue(value));
+}
 function setFailed(message) {
   process.exitCode = ExitCode.Failure;
   error(message);
@@ -19511,7 +19547,7 @@ function error(message, properties = {}) {
   issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 function info(message) {
-  process.stdout.write(message + os3.EOL);
+  process.stdout.write(message + os4.EOL);
 }
 
 // src/prerequisites.ts
@@ -19861,25 +19897,165 @@ function checkPrerequisites(options) {
   return results;
 }
 
-// src/orchestrator.ts
-function run(options) {
-  const results = checkPrerequisites(options);
-  const failed = results.filter((result) => result.status !== "available");
-  if (failed.length > 0) {
-    throw new Error(`Prerequisite check failed: ${failed.map((result) => result.name).join(", ")}. See the report for installation guidance.`);
+// src/build-selection.ts
+var import_node_child_process2 = require("node:child_process");
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+var releasePattern = /^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
+var boardPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+function git(firmware, args) {
+  try {
+    return (0, import_node_child_process2.execFileSync)("git", ["-C", (0, import_node_path2.resolve)(firmware), ...args], {
+      encoding: "utf8",
+      timeout: 1e4,
+      maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch (error2) {
+    const detail = error2 instanceof Error ? error2.message : String(error2);
+    throw new Error(`Cannot read firmware repository at ${(0, import_node_path2.resolve)(firmware)}. Ensure Git is installed and the checkout/tag is available locally. ${detail}`, { cause: error2 });
   }
+}
+function listReleases(firmware) {
+  if (git(firmware, ["rev-parse", "--is-inside-work-tree", "--show-prefix"]).trim() !== "true") {
+    throw new Error("The firmware directory must be the repository root of a local Git checkout.");
+  }
+  return git(firmware, ["for-each-ref", "--format=%(refname:strip=2)", "refs/tags"]).split(/\r?\n/).filter((tag) => releasePattern.test(tag)).sort((left, right) => right.localeCompare(left, "en", { numeric: true }));
+}
+function releaseCommit(firmware, release) {
+  if (!releasePattern.test(release)) throw new Error("Select an exact release tag such as v0.7.10.");
+  if (!listReleases(firmware).includes(release)) {
+    throw new Error(`Release ${release} is not available locally. Fetch the desired tag into the firmware checkout first.`);
+  }
+  const commit = git(firmware, ["rev-parse", "--verify", `refs/tags/${release}^{commit}`]).trim();
+  const root = git(firmware, ["ls-tree", "-z", commit, "--", "CMakeLists.txt"]);
+  if (!/^100(?:644|755) blob [a-f0-9]+\tCMakeLists\.txt\0$/.test(root)) {
+    throw new Error(`Release ${release} does not contain a regular root CMakeLists.txt.`);
+  }
+  return commit;
+}
+function externalDirectory(configs) {
+  try {
+    const directory = (0, import_node_fs2.realpathSync)((0, import_node_path2.resolve)(configs));
+    if (!(0, import_node_fs2.lstatSync)(directory).isDirectory()) throw new Error("Not a directory");
+    return directory;
+  } catch (error2) {
+    throw new Error(`Cannot read external config directory: ${(0, import_node_path2.resolve)(configs)}`, { cause: error2 });
+  }
+}
+function discoverBoards(firmware, commit, configs) {
+  let boards;
+  if (configs !== void 0) {
+    const directory = externalDirectory(configs);
+    try {
+      boards = (0, import_node_fs2.readdirSync)(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory() && boardPattern.test(entry.name)).filter((entry) => {
+        try {
+          return (0, import_node_fs2.lstatSync)((0, import_node_path2.join)(directory, entry.name, "BoardConfig.h")).isFile();
+        } catch {
+          return false;
+        }
+      }).map((entry) => entry.name);
+    } catch (error2) {
+      throw new Error(`Cannot read external config directory: ${directory}`, { cause: error2 });
+    }
+  } else {
+    boards = git(firmware, ["ls-tree", "-r", "-z", commit, "--", "configs"]).split("\0").flatMap((record) => {
+      const match = /^100(?:644|755) blob [a-f0-9]+\tconfigs\/([^/]+)\/BoardConfig\.h$/.exec(record);
+      const board = match?.[1];
+      return board && boardPattern.test(board) ? [board] : [];
+    });
+  }
+  return boards.sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
+}
+function listBoards(firmware, release, configs) {
+  return discoverBoards(firmware, releaseCommit(firmware, release), configs);
+}
+function selectBuild(firmware, release, board, configs) {
+  if (!boardPattern.test(board)) throw new Error("Select a board name, not a path.");
+  const commit = releaseCommit(firmware, release);
+  const boards = discoverBoards(firmware, commit, configs);
+  if (!boards.includes(board)) {
+    throw new Error(`Unknown board ${board} in ${configs === void 0 ? `release ${release}` : "external configs"}. Use list-boards to see available names.`);
+  }
+  return {
+    firmware: (0, import_node_path2.resolve)(firmware),
+    release,
+    commit,
+    board,
+    configSource: configs === void 0 ? "firmware" : "external",
+    configPath: configs === void 0 ? `configs/${board}` : (0, import_node_path2.join)(externalDirectory(configs), board)
+  };
+}
+
+// src/orchestrator.ts
+var operations = ["check-prerequisites", "list-releases", "list-boards", "select-build", "build"];
+function required(options, name) {
+  const value = options[name];
+  if (!value?.trim()) throw new Error(`The ${name} input is required for ${options.operation}.`);
+  return value;
+}
+function run(options) {
+  if (options.operation === "check-prerequisites" || options.operation === "build") {
+    const results = checkPrerequisites(options);
+    const failed = results.filter((result) => result.status !== "available");
+    if (failed.length > 0) {
+      throw new Error(`Prerequisite check failed: ${failed.map((result) => result.name).join(", ")}. See the report for installation guidance.`);
+    }
+    if (options.operation === "check-prerequisites") return {};
+  }
+  const firmware = required(options, "firmware");
+  if (options.operation === "list-releases") {
+    const releases = listReleases(firmware);
+    for (const release2 of releases) options.log(release2);
+    return { releases };
+  }
+  const release = required(options, "release");
+  if (options.configs !== void 0 && !options.configs.trim()) throw new Error("The configs input must be a non-empty directory path.");
+  if (options.operation === "list-boards") {
+    const boards = listBoards(firmware, release, options.configs);
+    for (const board of boards) options.log(board);
+    return { boards };
+  }
+  const selection = selectBuild(firmware, release, required(options, "board"), options.configs);
+  options.log(`Release: ${selection.release}
+Firmware commit: ${selection.commit}
+Board: ${selection.board}
+Config source: ${selection.configSource}
+Config path: ${selection.configPath}`);
   if (options.operation === "build") {
     throw new Error("Firmware build orchestration is not implemented yet. Prerequisites passed; no firmware was built.");
   }
+  options.log("Selection validated; no firmware was built.");
+  return { selection };
 }
 
 // src/action.ts
 try {
-  const operation = getInput("command") || "check-prerequisites";
-  if (operation !== "check-prerequisites" && operation !== "build") {
-    throw new Error("The command input must be check-prerequisites or build.");
+  const command = getInput("command") || "check-prerequisites";
+  const operation = operations.find((candidate) => candidate === command);
+  if (!operation) {
+    throw new Error(`The command input must be one of: ${operations.join(", ")}.`);
   }
-  run({ mode: "action", operation, log: info });
+  const configs = getInput("configs");
+  const result = run({
+    mode: "action",
+    operation,
+    log: info,
+    firmware: getInput("firmware"),
+    release: getInput("release"),
+    board: getInput("board"),
+    ...configs && { configs }
+  });
+  if (result.releases) setOutput("releases", result.releases);
+  if (result.boards) setOutput("boards", result.boards);
+  if (result.selection) {
+    setOutput("release", result.selection.release);
+    setOutput("firmware-commit", result.selection.commit);
+    setOutput("board", result.selection.board);
+    setOutput("config-source", result.selection.configSource);
+    setOutput("config-path", result.selection.configPath);
+  }
 } catch (error2) {
   setFailed(error2 instanceof Error ? error2 : String(error2));
 }

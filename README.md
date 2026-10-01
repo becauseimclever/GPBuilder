@@ -3,16 +3,36 @@
 Build orchestrator for GP2040-CE, designed to run locally and as a reusable
 GitHub Action.
 
-GPBuilder reports installed and missing host build tools locally, and can install
-missing packages on Ubuntu GitHub Actions runners. Firmware checkout, SDK setup,
-compilation, and artifact handling are not implemented yet.
+GPBuilder selects local GP2040-CE release tags and boards, supports external board
+config directories, and reports installed and missing host build tools. It can
+install missing packages on Ubuntu GitHub Actions runners. Firmware fetching,
+SDK setup, compilation, and artifact handling are not implemented yet.
 
 ## Architecture and Development
 
 See [Overall Architecture](docs/architecture.md) for the current system, proposed
 build boundaries, and documentation-driven development workflow. Feature guides
 double as specifications: usage, behavior, limitations, and acceptance criteria
-live in one document. Start with [Checking Build Prerequisites](docs/prerequisites.md).
+live in one document. Start with [Selecting a Release and Board](docs/build-selection.md)
+or [Checking Build Prerequisites](docs/prerequisites.md).
+
+The [planned CLI reference](docs/build-selection.md#planned-cli-contract) documents
+short/long flags, upstream source defaults, debug/release builds, and the pending
+matrix design. These additions are documented but not implemented.
+
+The [matrix schema](docs/matrix.md) supports YAML and JSON with shared defaults,
+a board list, and per-board config-location overrides. Matrix execution policy
+is still pending; no matrix support is implemented yet.
+
+[Building a Flashable Pico UF2](docs/firmware-build.md) defines the first end-to-end
+goal: `--release v0.7.12 --board Pico` produces a validated UF2 using default
+upstream source/configs. The guide covers dependencies, build stages, artifact
+validation, and qualification tests. This workflow is not implemented yet.
+
+The planned target `--release main --board Pico` builds a pinned main commit for
+development/nightly use. SDK and tool checks/setup follow that commit's referenced
+versions, so older releases retain their own requirements. Main support is also
+documentation-only for now.
 
 ## Local Development
 
@@ -33,6 +53,18 @@ Run `npm start -- --check-prerequisites` for a read-only tool report. With no
 arguments the CLI shows help. `--build` always checks prerequisites, but currently
 fails explicitly because firmware compilation is not implemented.
 
+With a local firmware Git checkout, choose a release and board without building:
+
+```sh
+npm start -- --list-releases --firmware ../GP2040-CE
+npm start -- --list-boards --firmware ../GP2040-CE --release v0.7.12
+npm start -- --select-build --firmware ../GP2040-CE --release v0.7.12 --board Pico
+```
+
+Use an exact local tag from the first command. Add `--configs <directory>` to
+list/select boards from a separate local config directory or checked-out repo.
+See the [selection guide](docs/build-selection.md) for the layout and Action inputs/outputs.
+
 To run without building, download a published release's **Source code** archive,
 extract it, and run `node dist/cli.cjs` from the extracted project root. The archive
 includes the committed CLI bundle; only Node.js 24 is needed. This requires a
@@ -44,11 +76,16 @@ and release-download instructions, prerequisites, and troubleshooting.
 | Command | Purpose |
 | --- | --- |
 | `npm run build` | Bundle the CLI and GitHub Action into `dist/` |
-| `npm run lint` | Lint source, tests, and JavaScript configuration |
+| `npm run lint` | Lint source, tests, JavaScript configuration, and all project `.yml`/`.yaml` files; reject warnings |
 | `npm run lint:fix` | Apply automatic lint fixes |
 | `npm run typecheck` | Check TypeScript without emitting files |
 | `npm test` | Build and smoke-test both bundled entry points |
 | `npm run check` | Run linting, type checking, build, and tests |
+
+YAML linting includes GitHub workflows and Action metadata. With the VS Code
+ESLint extension installed, workspace settings enable the same YAML rules in the
+editor. `npm run check` is the required zero-error, zero-warning validation gate;
+`npm run build` alone only bundles the application.
 
 The shared orchestration entry point is `src/orchestrator.ts`. The local adapter
 is `src/cli.ts`, and `src/action.ts` handles GitHub Actions logging and failures.
@@ -63,18 +100,18 @@ name: GPBuilder
 on: workflow_dispatch
 
 permissions:
-	contents: read
+  contents: read
 
 jobs:
-	prerequisites:
-		runs-on: ubuntu-24.04
-		steps:
-			- uses: actions/setup-node@v4
-				with:
-					node-version: 24
-			- uses: becauseimclever/GPBuilder@COMMIT_SHA
-				with:
-					command: check-prerequisites
+  prerequisites:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: becauseimclever/GPBuilder@COMMIT_SHA
+        with:
+          command: check-prerequisites
 ```
 
 Consumers do not need to install or build GPBuilder. GitHub supplies its Node.js 24

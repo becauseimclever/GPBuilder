@@ -1,6 +1,6 @@
 # Overall Architecture
 
-Status: baseline for prerequisite checking; future firmware build behavior is proposed.
+Status: prerequisite checking and offline build selection implemented; compilation is proposed.
 
 ## Purpose and Scope
 
@@ -9,10 +9,11 @@ the same build capabilities through a local CLI and a reusable GitHub Action.
 It coordinates firmware tooling rather than replacing the firmware project's
 build system or owning firmware source code.
 
-The current implementation checks host prerequisites and reports them. The CLI
-is read-only; the Action can repair missing tools on Ubuntu runners. Both build
-entry points require the shared prerequisite gate, then fail explicitly because
-firmware compilation is not implemented. Firmware checkout, SDK preparation,
+The current implementation selects local release tags and board configs and
+checks host prerequisites. Selection is read-only in both adapters; the Action
+can repair missing tools on Ubuntu runners for prerequisite/build operations.
+Both build entry points require the shared prerequisite gate and valid selection,
+then fail explicitly because firmware compilation is not implemented. Firmware checkout, SDK preparation,
 compilation, and artifact collection remain future work.
 
 ## Architectural Principles
@@ -33,6 +34,8 @@ flowchart TD
     Workflow[Consumer workflow] --> Action[GitHub Action adapter]
     CLI --> Core[Shared orchestration entry point]
     Action --> Core
+    Core --> Selection[Read local release tags and built-in or external boards]
+    Selection --> Selected[Validated selection: commit, board, config source and path]
     Core --> Prerequisites[Shared host-tool checks and console report]
     Prerequisites --> LocalReport[Local: report only]
     Prerequisites --> Repair[Action: Ubuntu package repair and recheck]
@@ -40,11 +43,12 @@ flowchart TD
 
 | Component | Location | Current responsibility |
 | --- | --- | --- |
-| Shared core | [src/orchestrator.ts](../src/orchestrator.ts) | Requires prerequisites for checks and builds; rejects unfinished build execution |
+| Shared core | [src/orchestrator.ts](../src/orchestrator.ts) | Routes listing/selection; requires prerequisites for checks and builds; rejects unfinished build execution |
+| Build selection | [src/build-selection.ts](../src/build-selection.ts) | Resolves local tags to commits and validates built-in/external board configs without modifying checkouts |
 | Prerequisites | [src/prerequisites.ts](../src/prerequisites.ts) | Detects tools, reports status, and applies the Ubuntu Action repair policy |
 | CLI adapter | [src/cli.ts](../src/cli.ts) | Supplies console logging and maps failures to a nonzero exit code |
 | Action adapter | [src/action.ts](../src/action.ts) | Supplies Actions logging and reports failures with `core.setFailed` |
-| Action metadata | [action.yml](../action.yml) | Declares Node.js 24 and the `command` input; no outputs yet |
+| Action metadata | [action.yml](../action.yml) | Declares Node.js 24, operation/selection inputs, and discovery/selection outputs |
 | Build and checks | [package.json](../package.json) | Defines npm scripts and dependencies |
 | Smoke tests | [test/smoke.test.mjs](../test/smoke.test.mjs) | Executes standalone copies of both bundles from temporary directories |
 | CI | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | Tests on Linux, Windows, and macOS; verifies bundles; invokes the real Action on Linux |
@@ -103,8 +107,21 @@ before adding new libraries.
 
 Feature guides define request fields, defaults, path resolution, supported targets,
 result fields, and failure behavior as their specification. The current flags and
-Action input are documented in [Checking Build Prerequisites](prerequisites.md).
-Firmware source and target contracts remain undecided.
+Action inputs are documented in [Checking Build Prerequisites](prerequisites.md)
+and [Selecting a Release and Board](build-selection.md). That guide distinguishes
+current local selection from the [planned CLI contract](build-selection.md#planned-cli-contract):
+short/long aliases, optional source paths with an upstream default, and build type.
+[Building a Flashable Pico UF2](firmware-build.md) defines the first two-flag build,
+source/SDK preparation, stage boundaries, artifact validation, and qualification
+gates for Pico at v0.7.12. The [matrix guide](matrix.md) defines shared YAML/JSON
+defaults and board entries. Matrix execution policy and broader build profiles
+remain undecided. Planned documentation does not imply runtime support.
+
+Planned builds resolve a tag or explicit `main` to one commit before deriving the
+SDK/tool requirements. A minimal bootstrap gate allows read-only source inspection;
+the full revision-specific gate precedes dependency setup and compilation. Both
+adapters and all boards in a matrix use that resolved source/profile, rather than
+global latest-version assumptions. Main results retain their full commit identity.
 
 ### Execution and Safety
 
@@ -128,13 +145,15 @@ explicitly adds them to GPBuilder.
 
 Dependencies, caches, test coverage, logs, local environment files, and temporary
 build output do not belong in version control. The root `build/`, `artifacts/`,
-and `tmp/` directories are ignored for local use, but are not yet prescribed
-runtime output paths. Preserve the lockfile, documentation, and Action bundles.
+and `tmp/` directories are ignored for local use. The planned Pico build uses
+owned OS-temporary run directories and publishes validated results under
+`artifacts/`, as defined in its guide. Preserve the lockfile, documentation, and Action bundles.
 
 A future build result should identify the resolved firmware revision, selected
-target and options, toolchain versions, and produced artifacts. Artifact naming,
-hashing, cache keys, and reproducibility guarantees need their own acceptance
-criteria; the scaffold makes no byte-for-byte reproducibility guarantee.
+target and options, toolchain versions, and produced artifacts. The Pico guide
+defines first-slice naming, hashing, and metadata requirements. Shared cache keys
+and reproducibility guarantees remain future work; the scaffold makes no
+byte-for-byte reproducibility guarantee.
 
 ## Spec-Driven Development
 
@@ -160,12 +179,12 @@ boundaries change. CI enforces technical checks, not documentation approval.
 
 ## Decisions Left to Feature Specs
 
-- Whether builds consume a local checkout, fetch a repository revision, or both.
-- Supported GP2040-CE targets, configuration options, and firmware revisions.
-- Source-specific toolchain version selection beyond the current host-tool profile.
-- Native versus containerized builds and supported host platforms.
-- Artifact layout, caching, concurrency, cancellation, and cleanup policy.
-- CLI options, Action inputs/outputs, and any machine-readable result format.
+- Build profiles beyond the Pico v0.7.12 example, including external-config integration.
+- Compatibility decisions if the sample's SDK/compiler/Node qualification fails.
+- Containerized builds and additional supported host/toolchain combinations.
+- Shared caching and batch scheduling beyond isolated single-build runs.
+- Matrix execution limits, scheduling, failure policy, and associated Action outputs.
+- Additional build outputs and any machine-readable result format beyond selection.
 
 These decisions should be grounded in the firmware project's build requirements
 when the first build feature is specified, rather than assumed by this scaffold.

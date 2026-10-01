@@ -30,6 +30,7 @@
     "@types/node": "^24.19.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
+    "eslint-plugin-yml": "^3.8.1",
     "globals": "^17.12.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.0"

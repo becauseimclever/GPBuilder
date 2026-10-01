@@ -217,18 +217,23 @@ trusted. Successful partial installations are not rolled back if a later step fa
 The build entry points are:
 
 ```sh
-npm start -- --build
-node dist/cli.cjs --build
+npm start -- --build --firmware ../GP2040-CE --release v0.7.12 --board Pico
+node dist/cli.cjs --build --firmware ../GP2040-CE --release v0.7.12 --board Pico
 ```
 
-For the Action, select `command: build`. Both routes call the same prerequisite
+Use a tag and board available in your checkout. For the Action, select
+`command: build` and supply `firmware`, `release`, and `board` inputs. Both routes call the same prerequisite
 gate before entering build execution. Local builds do not install tools; Action
 builds apply the installation policy above. There is no skip-prerequisites option.
 `--build` and `--check-prerequisites` are mutually exclusive because builds already
 include the check. Unknown CLI flags or Action commands fail.
 
-**Firmware compilation is not implemented yet.** If host prerequisites pass,
-`--build` / `command: build` still fails explicitly with a not-implemented message.
+After the gate, builds require a valid release/board selection; see
+[Selecting a Release and Board](build-selection.md) for inputs and external configs.
+Listing and selection-only operations do not run the build-tool prerequisite gate.
+
+**Firmware compilation is not implemented yet.** If host prerequisites and selection
+pass, `--build` / `command: build` still fails explicitly with a not-implemented message.
 It never reports a successful build or produces firmware. Running the CLI without
 arguments, or with `--help`, prints usage without probing or installing tools.
 
@@ -248,6 +253,33 @@ feature does not inspect or install those, fetch firmware, resolve SDK paths,
 certify an Arm compiler version, or test network access. Every report explicitly
 states this limit. SDK/source preparation and target validation must be added to
 the build path before firmware compilation can be implemented.
+
+That SDK minimum applies to the newer baseline revision above. The planned
+[Pico v0.7.12 build](firmware-build.md) instead has an upstream SDK minimum of
+2.1.1 and its own dependency qualification requirements. A passing host-tool
+report alone does not verify either firmware release can compile.
+
+## Planned Revision-Aware Checks
+
+The future build path accepts exact release tags and explicit `main`. It must not
+apply one SDK/tool profile to every firmware target. Follow the
+[revision-specific validation order](firmware-build.md#validation-and-setup-order):
+bootstrap the runtime/Git needed to resolve the source, inspect the resolved
+firmware commit, then validate the full toolchain against its referenced versions
+before project dependency setup and compilation. This limited source inspection
+before the full gate does not execute firmware/config scripts or bypass the gate.
+
+The requirements record must distinguish hard constraints from preferred SDK/tool
+version references and tested workflow versions. Report required/preferred and
+detected versions, use compatible matching tools for actual execution, and recheck
+after any permitted Action repair. Local mode still never installs host tools.
+If a compatible tool cannot be supplied under the existing policy, fail with
+guidance rather than installing an arbitrary distro version and claiming readiness.
+
+For example, `v0.7.12` references SDK 2.1.1, while the newer inspected source
+snapshot references 2.3.1. Main must use whatever its resolved commit references,
+not a permanently hard-coded "latest" SDK. Existing `--check-prerequisites` output
+remains a generic host report; these target-aware checks are planned, not implemented.
 
 ## Acceptance and Verification
 

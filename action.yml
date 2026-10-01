@@ -1,11 +1,38 @@
 name: GPBuilder
-description: Check GP2040-CE host prerequisites and install missing tools on Ubuntu Actions runners. Firmware builds are not implemented yet.
+description: Select GP2040-CE releases and boards, and check host prerequisites. Firmware builds are not implemented yet.
 author: becauseimclever
 inputs:
   command:
-    description: 'Operation: check-prerequisites or build (build is not implemented yet).'
+    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (compilation is not implemented)."
     required: false
     default: check-prerequisites
+  firmware:
+    description: Local firmware Git checkout root. Required for release/board operations and build.
+    required: false
+  release:
+    description: Exact local firmware release tag. Required for list-boards, select-build, and build.
+    required: false
+  board:
+    description: Case-sensitive board directory name. Required for select-build and build.
+    required: false
+  configs:
+    description: Optional local directory containing external board folders; replaces built-in configs.
+    required: false
+outputs:
+  releases:
+    description: JSON array of local release tags from list-releases.
+  boards:
+    description: JSON array of board names from list-boards.
+  release:
+    description: Exact release tag validated by select-build.
+  firmware-commit:
+    description: Firmware commit resolved by select-build.
+  board:
+    description: Board name validated by select-build.
+  config-source:
+    description: "Config source selected by select-build: firmware or external."
+  config-path:
+    description: Board path inside the selected Git tree for firmware configs, or an absolute local board directory for external configs.
 branding:
   icon: cpu
   color: green
