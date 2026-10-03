@@ -1,9 +1,9 @@
 name: GPBuilder
-description: Select GP2040-CE releases and boards, check host prerequisites, and build qualified Pico UF2s (v0.7.12 or main) on pre-provisioned Windows x64 hosts.
+description: Select GP2040-CE releases and boards, check host prerequisites, and build RP2040 UF2s (v0.7.12 or main, built-in or external configs) on pre-provisioned Windows x64 or Ubuntu x64 hosts.
 author: becauseimclever
 inputs:
   command:
-    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (Pico Release for v0.7.12 or main on Windows x64)."
+    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (RP2040 Release for v0.7.12 or main on Windows x64 or Ubuntu x64)."
     required: false
     default: check-prerequisites
   firmware:

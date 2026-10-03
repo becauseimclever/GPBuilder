@@ -1,8 +1,8 @@
 # Building a Flashable RP2040 UF2
 
-**Status: implemented and integration-built on Windows x64; an Ubuntu x64
-host profile for the GitHub Action is implemented and awaiting its first real
-integration build (see [Host Profiles](#host-profiles)).** The supported builds
+**Status: implemented and integration-built on Windows x64 (locally) and Ubuntu
+x64 (through the GitHub Action, building `Pico` and the external-config
+`OpenCore0` on GP2040-CE `main`; see [Host Profiles](#host-profiles)).** The supported builds
 are for **RP2040** board configurations: GP2040-CE **0.7.12** from upstream tag
 `v0.7.12`, and development builds of GP2040-CE `main`. The board may be any
 configuration discovered in the firmware's built-in `configs` directory or in a
@@ -181,9 +181,10 @@ macOS (`darwin`), is rejected before side effects.
 On Ubuntu, the calling workflow is responsible for provisioning the tool layout
 (for example by downloading the Arm GNU 15.2.Rel1 Linux toolchain, CMake 4.3.4,
 and Ninja 1.13.2 into `~/.pico-sdk`, and using `actions/setup-python` for 3.13).
-GPBuilder only discovers and validates them. The Ubuntu profile is exercised by a
-real integration build through the GitHub Action; it has no hardware
-qualification.
+GPBuilder only discovers and validates them. The Ubuntu profile has been
+exercised by real `ubuntu-latest` integration builds through the GitHub Action
+(`Pico` from the firmware's built-in configs and `OpenCore0` from the Board
+Config Registry, both on `main`); it has no hardware qualification.
 
 ### Validation and Setup Order
 
@@ -552,7 +553,8 @@ checks above:
     probed, `PATH` entries are joined with `:`, npm is invoked directly, and
     metadata records `Ubuntu x64`. `darwin` must still be rejected before side
     effects. Execute a real `ubuntu-latest` Action build of `Pico` and
-    `OpenCore0` on `main` before claiming the Ubuntu profile supported.
+    `OpenCore0` on `main` before claiming the Ubuntu profile supported
+    (verified: both boards built and were published as release assets).
 
 The [matrix schema](matrix.md) defines parsing and normalization; matrix execution
 still needs its pending policy decisions documented. RP2040 boards are supported

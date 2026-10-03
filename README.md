@@ -6,9 +6,9 @@ GitHub Action.
 GPBuilder selects local GP2040-CE release tags or the local `main` branch and
 boards, supports external board config directories, and reports installed and
 missing host build tools. It can install missing packages on Ubuntu GitHub Actions
-runners. A complete UF2 build is implemented for GP2040-CE `v0.7.12`, the original
-Pico, Release mode, and the qualified Windows x64 tool profile. Other targets and
-host profiles are not yet supported.
+runners. A complete UF2 build is implemented for GP2040-CE `v0.7.12` or `main`,
+RP2040 boards from built-in or external configs, Release mode, and the Windows x64
+and Ubuntu x64 tool profiles. Other targets and host profiles are not yet supported.
 
 ## Architecture and Development
 
@@ -27,8 +27,9 @@ a board list, and per-board config-location overrides. Matrix execution policy
 is still pending; no matrix support is implemented yet.
 
 [Building a Flashable Pico UF2](docs/firmware-build.md) documents the implemented
-workflow: `--release v0.7.12 --board Pico` produces a validated UF2 using default
-upstream source/configs on the qualified Windows x64 profile. Hardware behavior is
+workflow: `--release v0.7.12 --board Pico` (or `--release main`, optionally with
+`--firmware` and `--configs`) produces a validated UF2 on the Windows x64 or
+Ubuntu x64 profile. Hardware behavior is
 not qualified; the build does not flash a device.
 
 Local `main` selection is implemented for listing and validating boards. Building
