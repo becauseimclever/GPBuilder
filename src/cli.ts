@@ -35,14 +35,15 @@ Usage: node dist/cli.cjs <operation> [options]
 --list-releases        List local release tags; requires --firmware.
 --list-boards          List boards; --release accepts a local tag or main.
 --select-build         Validate --firmware, --release, and --board without building.
---build                Check prerequisites and selection; compilation is not implemented.
+--build                Build a Pico UF2 for v0.7.12 or main on Windows x64.
                        A complete --release and --board pair also implies --build.
 --help                Show this help.
 
---firmware <path>      Local GP2040-CE Git checkout.
---release <tag|main>   Exact local release tag or local refs/heads/main.
---board <name>         Exact, case-sensitive board directory name.
---configs <path>       External directory containing board folders; replaces built-in configs.`);
+--firmware <path>      Local GP2040-CE Git checkout; builds default to upstream.
+--release <tag|main>   Exact release tag (v0.7.12 for builds) or main.
+--board <name>         Exact, case-sensitive board directory name (Pico for builds).
+--configs <path>       Directory of board folders. Builds overlay only configs/<board>,
+                       which must contain BoardConfig.h.`);
   } else {
     await run({
       mode: 'local', log: console.log,

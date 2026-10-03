@@ -57,3 +57,26 @@ test('refuses malformed firmware and never overwrites an existing run', () => {
   writeFileSync(valid, Buffer.concat([uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)]));
   assert.throws(() => publishArtifact({ ...options, source: valid }), /already exists/);
 });
+test('publishes main builds under the full commit with a commit-qualified filename', () => {
+  const workingDirectory = join(directory, 'main tree');
+  const source = join(directory, 'main.uf2');
+  writeFileSync(source, Buffer.concat([uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)]));
+  const commit = 'a'.repeat(40);
+  const result = publishArtifact({
+    source, workingDirectory, runId: 'main-run', release: 'main', commit, board: 'Pico', buildType: 'release', metadata: {},
+  });
+  assert.equal(result.path, join(workingDirectory, 'artifacts', 'Pico', 'main', commit, 'release', 'main-run', `GP2040-CE_main_${commit}_Pico.uf2`));
+  const metadata = JSON.parse(readFileSync(result.metadataPath, 'utf8'));
+  assert.deepEqual(metadata.requested, { release: 'main', commit, board: 'Pico', buildType: 'release' });
+  assert.equal(metadata.artifact.filename, `GP2040-CE_main_${commit}_Pico.uf2`);
+});
+
+test('requires a full lowercase commit for main publication', () => {
+  const workingDirectory = join(directory, 'main tree');
+  const source = join(directory, 'main-invalid.uf2');
+  writeFileSync(source, Buffer.concat([uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)]));
+  const options = { source, workingDirectory, runId: 'main-bad', release: 'main', board: 'Pico', buildType: 'release', metadata: {} };
+  assert.throws(() => publishArtifact(options), /commit/);
+  assert.throws(() => publishArtifact({ ...options, commit: 'abc123' }), /commit/);
+  assert.throws(() => publishArtifact({ ...options, commit: '../'.repeat(13) + 'a' }), /commit/);
+});

@@ -46,7 +46,7 @@ of a firmware development environment.
 | Git | `git --version` | `git` |
 | CMake | `cmake --version`, at least 3.10 | `cmake` |
 | Build generator | `ninja --version`, falling back to `make --version` | `ninja-build` |
-| Host C++ compiler | `CXX`, GCC/Clang on PATH, Visual Studio on Windows, or Xcode tools on macOS | `build-essential` |
+| Host C++ compiler | `CXX`, GCC/Clang on PATH, Visual Studio on Windows, Xcode tools on macOS, or Pico extension prebuilt `pioasm`/`picotool` | `build-essential` |
 | Python | `python3 --version`, major version 3 | `python3` |
 | Python virtual environments | Import `venv` and `ensurepip` using the detected Python | `python3-venv` |
 | Arm C compiler | `arm-none-eabi-gcc --version` | `gcc-arm-none-eabi` |
@@ -91,9 +91,15 @@ GPBuilder checks the following sources in order:
 4. **macOS:** use `xcrun --find clang++` to locate and probe the active Xcode or
    Command Line Tools compiler when PATH candidates fail. The active developer
    directory is selected by the system and any inherited `DEVELOPER_DIR` setting.
+5. **Pico extension prebuilt host tools:** when `CXX` is not set and no compiler
+   was found, the requirement is satisfied if the Pico extension root contains
+   prebuilt `pioasm` (`tools/<version>/pioasm/pioasmConfig.cmake`) and `picotool`
+   2.3.0 or later (`picotool/<version>/picotool/picotoolConfig.cmake`). The
+   firmware build then uses these tools instead of compiling them from source.
 
-The report labels the selected source as `[CXX]`, `[PATH]`, `[Visual Studio]`, or
-`[Xcode]` and includes the executable and version banner. A runnable compiler must
+The report labels the selected source as `[CXX]`, `[PATH]`, `[Visual Studio]`,
+`[Xcode]`, or `[Pico extension]` and includes the executable and version banner
+(or, for prebuilt tools, the tool versions). A runnable compiler must
 produce a recognized banner; simply finding a directory or executable is not enough.
 
 For a custom Windows installation, set the executable path in PowerShell:
@@ -117,7 +123,9 @@ This check verifies compiler presence and its ability to report a version, not a
 compile/link test. MSVC builds may still require a Visual Studio Developer shell
 to provide `INCLUDE`, `LIB`, and Windows SDK settings. Likewise, GCC/Clang headers,
 linkers, SDKs, and compatibility with a particular build generator are not validated.
-If no compiler is discovered, install/configure Visual Studio C++ Build Tools on
+The prebuilt-tool fallback only removes the need to compile `pioasm` and
+`picotool`; the SDK must accept the prebuilt `pioasm` version for the selected
+firmware profile. If no compiler or prebuilt tools are discovered, install/configure Visual Studio C++ Build Tools on
 Windows, Xcode Command Line Tools on macOS, or your distribution's GCC/Clang C++
 development packages on Linux. No tools are installed by a local check.
 

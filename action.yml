@@ -1,22 +1,22 @@
 name: GPBuilder
-description: Select GP2040-CE releases and boards, check host prerequisites, and build the qualified v0.7.12 Pico UF2 on pre-provisioned Windows x64 hosts.
+description: Select GP2040-CE releases and boards, check host prerequisites, and build qualified Pico UF2s (v0.7.12 or main) on pre-provisioned Windows x64 hosts.
 author: becauseimclever
 inputs:
   command:
-    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (v0.7.12 Pico Release on Windows x64)."
+    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (Pico Release for v0.7.12 or main on Windows x64)."
     required: false
     default: check-prerequisites
   firmware:
     description: Local firmware Git checkout root. Required for listing/selection; optional for the supported build, which defaults to upstream.
     required: false
   release:
-    description: Exact local release tag or local main branch. Required for list-boards, select-build, and build.
+    description: Exact release tag or main. Builds support v0.7.12 and main. Required for list-boards, select-build, and build.
     required: false
   board:
     description: Case-sensitive board directory name. Required for select-build and build.
     required: false
   configs:
-    description: Optional local directory containing external board folders; replaces built-in configs.
+    description: Optional local directory containing external board folders. Builds overlay only configs/<board>, which must contain BoardConfig.h.
     required: false
 outputs:
   releases:

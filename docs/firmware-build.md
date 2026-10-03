@@ -1,15 +1,16 @@
 # Building a Flashable Pico UF2
 
-**Status: implemented and integration-built on Windows x64.** The supported build
-is GP2040-CE **0.7.12** for the original Raspberry Pi **Pico** (RP2040), using
-upstream tag `v0.7.12` and its built-in `Pico` configuration. This is not a Pico W,
-Pico 2, or generic RP2040-board recipe. Other host profiles, targets, boards,
-build types, and external configs are not supported or qualified.
+**Status: implemented and integration-built on Windows x64.** The supported builds
+are for the original Raspberry Pi **Pico** (RP2040): GP2040-CE **0.7.12** from
+upstream tag `v0.7.12`, and development builds of GP2040-CE `main`. Either target
+may use its built-in `Pico` configuration or a `Pico` configuration from a
+caller-supplied configs folder. This is not a Pico W, Pico 2, or generic
+RP2040-board recipe. Other host profiles, boards, and build types are not
+supported or qualified.
 
-Local selection accepts `main` for development/nightly builds. Building main,
-including upstream resolution and revision-specific setup, remains planned. The
-released Pico example is the initial qualification case; a successful release
-build does not establish that a later main commit builds or runs correctly.
+The released Pico example is the initial qualification case; a successful release
+build does not establish that a later main commit builds or runs correctly. Each
+main build reports the exact commit it built.
 
 ## User Contract
 
@@ -18,11 +19,13 @@ the firmware release and board:
 
 ```sh
 node dist/cli.cjs --release v0.7.12 --board Pico
-node dist/cli.cjs -r v0.7.12 -b Pico
+node dist/cli.cjs --build --release v0.7.12 --board Pico
 ```
 
-These are equivalent supported commands. No `--build`, source path, SDK path, config
-path, or matrix is required. With a complete release/board pair and no explicit
+These are equivalent supported commands; `--release main` works the same way.
+Short `-r`/`-b` aliases from the target menu in
+[build selection](./build-selection.md) are not yet implemented. No `--build`,
+source path, SDK path, config path, or matrix is required. With a complete release/board pair and no explicit
 operation or matrix, the CLI defaults to `build`. An explicit `--select-build`
 remains validation-only; an explicit `--build` remains supported. No arguments
 still shows help. An incomplete pair fails with guidance, not a guessed board or
@@ -30,19 +33,32 @@ release. Help/version and matrix precedence remain as defined in the
 [CLI contract](build-selection.md#planned-cli-contract).
 
 The release flag is the firmware version, not GPBuilder's `--version` flag.
-Use the exact tag `v0.7.12`; accepting a bare `0.7.12` alias is not part of this
-contract. Local `main` selection is supported for discovery only; building main
-is not supported.
+Use the exact tag `v0.7.12` or the exact target `main`; accepting a bare `0.7.12`
+alias is not part of this contract.
 
 Defaults are the upstream GP2040-CE repository, `configs/Pico` from that exact
-commit, and build type `release` (CMake `Release`). A local firmware path may be
-supplied to select its exact tag; GPBuilder materializes a clean copy and does not
-modify that checkout. The caller needs network access for source and dependency
-retrieval. GPBuilder does not install host software. Its qualified Windows tool
-profile is checked before dependency setup; other host profiles are unsupported.
+commit, and build type `release` (CMake `Release`). Two optional folders change
+the inputs:
 
-A successful run prints an absolute path to a newly built, validated
-`GP2040-CE_0.7.12_Pico.uf2`, its byte size, and SHA-256 digest, then exits 0.
+```sh
+node dist/cli.cjs --firmware <source-folder> --configs <configs-folder> --release main --board Pico
+```
+
+- `--firmware <source-folder>` supplies a local GP2040-CE Git checkout. GPBuilder
+  materializes an owned copy and never builds in or modifies that folder. See
+  [Materialize the Selected Source](#2-materialize-the-selected-source) for how
+  `v0.7.12` and `main` treat local changes.
+- `--configs <configs-folder>` supplies board configurations laid out like the
+  firmware's `configs` directory. It must contain `<Board>/BoardConfig.h`. Its
+  `<Board>` directory replaces `configs/<Board>` in the owned source copy only.
+  The caller's configs folder is never modified.
+
+The caller needs network access for source and dependency retrieval. GPBuilder
+does not install host software. Its qualified Windows tool profile is checked
+before dependency setup; other host profiles are unsupported.
+
+A successful run prints an absolute path to a newly built, validated UF2 (for
+example `GP2040-CE_0.7.12_Pico.uf2`), its byte size, and SHA-256 digest, then exits 0.
 No flash drive or connected Pico is required to build. The produced image has not
 been physically tested on a Pico. GPBuilder never flashes hardware, erases
 configuration, or copies files to a device.
@@ -51,108 +67,106 @@ configuration, or copies files to a device.
 
 ```sh
 node dist/cli.cjs --release main --board Pico
-node dist/cli.cjs -r main -b Pico
+node dist/cli.cjs --firmware ./GP2040-CE --configs ./my-configs --release main --board Pico
 ```
 
-`--release` is the firmware target selector: this build currently accepts only
-the exact release tag `v0.7.12`. No implicit latest target, arbitrary branch, raw commit expression,
-`latest`, or `nightly` alias is introduced. "Nightly" describes building main; it
-does not add a scheduled workflow or download a prebuilt nightly artifact.
+`--release` is the firmware target selector: this build accepts exactly the
+release tag `v0.7.12` or `main`. No implicit latest target, arbitrary branch, raw
+commit expression, `latest`, or `nightly` alias is introduced. "Nightly" describes
+building main; it does not add a scheduled workflow or download a prebuilt
+nightly artifact. Main builds currently support only `Pico` (RP2040) on Windows;
+`Pico2` requires RP2350 UF2 validation and remains unsupported.
 
 ### Resolve Once, Build One Commit
 
-For the default upstream source, resolve `refs/heads/main` to its current commit
-at the start of each invocation, then materialize that exact commit in owned
-storage. For a supplied local checkout, use its local `refs/heads/main`; do not
-fetch or substitute `origin/main`, the current branch, or HEAD if that ref is
-missing. A local main build means the local branch tip, not necessarily the newest
-upstream commit. Do not mutate the caller's branch or include uncommitted files.
+For the default upstream source, resolve `refs/heads/main` once at the start of
+the invocation, then clone that exact commit into owned storage and verify the
+checked-out commit. A later branch update must not change an in-progress build,
+and a subsequent invocation resolves again rather than reusing a cached tip.
 
-Pin the resolved firmware commit throughout discovery, requirement inspection,
-dependency setup, compilation, and artifact validation. A later branch update
-must not change an in-progress build. All entries in one matrix invocation share
-the same resolved firmware commit. A subsequent upstream main invocation resolves
-again, rather than trusting a previous invocation's cached branch tip.
+For an explicit local `--firmware` main build, GPBuilder builds the working tree
+as it currently exists: it copies the directory, including uncommitted and
+untracked files and the `.git` directory (so upstream version generation through
+`git describe` works), into owned temporary storage. `node_modules` and `build`
+directories are excluded. The caller's directory is never modified. The copy
+records the `HEAD` commit and a `dirty` flag (true when `git status --porcelain`
+reports changes); the generated firmware version then carries a `-dirty` suffix.
+The local branch name is irrelevant: a local main build means "this working tree",
+not necessarily the newest upstream commit.
 
-Use built-in configs from that same commit, not a separately fetched main config
-tree. Record both the requested target (`main` or tag) and the resolved firmware
-commit in the result. Keep enough Git/tag metadata for upstream version generation;
-the embedded version reported by main is not necessarily the literal `main`.
+Use built-in configs from the copied source unless `--configs` supplies an
+overlay (see [Materialize the Selected Source](#2-materialize-the-selected-source)).
+Record the requested target, the resolved firmware commit, the dirty flag, and
+the config source in the result. The embedded version reported by main is not
+the literal `main`.
 
-### Derive the Build Requirements
+### Tool Profiles and Compatibility Check
 
-Before selecting or preparing build tools, inspect requirements from the resolved
-firmware commit, including its root CMake declarations, SDK/toolchain/picotool
-version references, dependency manifests and lockfiles, submodule gitlinks, and
-relevant build workflows. Inspect the selected SDK's own host-tool requirements as
-well. Do not reuse a global profile chosen before the firmware target was known.
+Each supported target has a pinned, qualified tool profile:
 
-Distinguish hard constraints (minimum/exact versions in build logic or manifests),
-preferred version references (such as Pico-extension version hints), and tested
-workflow versions. Workflow use is compatibility evidence, not proof that all
-other versions fail. Derive an explicit requirements record with each value's
-source file/revision and whether it is required, preferred, or requires qualification.
-Conflicting declarations or unsupported/dynamic declarations must cause a useful
-failure or require a documented compatibility rule, not a guessed version. Do not
-execute arbitrary firmware scripts merely to discover metadata.
+| Target | Pico SDK | picotool | Arm GNU toolchain |
+|---|---|---|---|
+| `v0.7.12` | 2.1.1 (commit `bddd20f928ce76142793bef434d4f75f4af6e433`) | 2.1.1 | `15_2_Rel1` |
+| `main` | 2.3.1 (resolved commit recorded) | 2.3.1 | `15_2_Rel1` |
 
-Select the SDK revision referenced by that firmware commit, then verify that it
-satisfies the firmware's hard constraints. Match compiler/C++ libraries and SDK
-host tools to the resolved profile. Validate CMake, Python, Node/npm build needs,
-and the generator against the same profile before running their build stages.
-GPBuilder's own Node.js 24 runtime contract remains independent; source requirements
-do not authorize silently changing the orchestrator runtime.
+Both profiles use CMake 4.3.4, Ninja 1.13.2, Python 3.13 (`py.exe -3.13`), and
+SDK host tools (`pioasm` and `picotool`). When the Pico extension's prebuilt
+host tools for the profile are installed under the Pico root, GPBuilder uses
+them and no host C++ compiler or Visual Studio is required:
 
-For `v0.7.12`, the inspected root CMake references SDK 2.1.1, Arm GNU 14_2_Rel1,
-and picotool 2.1.1. The newer inspected firmware snapshot
-[`21947c9f2251960f1cbbd6bfc2bea38bc31f9454`](https://github.com/OpenStickCommunity/GP2040-CE/blob/21947c9f2251960f1cbbd6bfc2bea38bc31f9454/CMakeLists.txt)
-references SDK 2.3.1, Arm GNU 15_2_Rel1, and picotool 2.3.1. This illustrates why
-main and release builds cannot share one hard-coded SDK version. These observations
-are not a permanent main profile or proof that either combination is qualified.
+- `tools/<sdk version>/pioasm/pioasmConfig.cmake` (pioasm must match the SDK
+  version exactly because the SDK looks it up by exact version), and
+- `picotool/<picotool version>/picotool/picotoolConfig.cmake`.
 
-"Latest SDK for main" means the SDK referenced by the resolved main commit, not
-the newest SDK release independently available today. Never upgrade an older
-firmware release to main's SDK merely because it is installed, or let main fall
-back to a release's older SDK. A locally available tool is reusable only after its
-version and configuration satisfy the selected requirements and compatibility
-policy. Action repairs and dependency preparation must use this same record;
-if the documented installer cannot supply a compatible tool, fail with guidance.
+They are passed to CMake as `pioasm_DIR` and `picotool_DIR`, and the prebuilt
+picotool version and path are recorded in provenance. If either is missing,
+the SDK builds the host tools from source, which requires the Visual Studio
+2022 C++ host tools described below. SDK 2.3.1 does not build
+`v0.7.12` (its bundled Mbed TLS integration is incompatible), so release and main
+builds cannot share one SDK. Python 3.14 is not used because `grpcio-tools` has no
+compatible wheel.
+
+Before preparing the SDK, GPBuilder reads the minimum versions declared by the
+materialized source's root `CMakeLists.txt`: the Pico-extension hints
+`set(sdkVersion …)`, `set(toolchainVersion …)`, and `set(picotoolVersion …)`, and
+the SDK minimum guard `if (PICO_SDK_VERSION_STRING VERSION_LESS "…")`. The SDK
+requirement is the higher of the hint and the guard. If a declaration
+cannot be found, or the source requires a newer SDK, picotool, or toolchain than
+the pinned profile, the build fails with the required and pinned versions instead
+of guessing. Firmware scripts are never executed to discover these values.
 
 ### Validation and Setup Order
 
-1. Validate input syntax and perform a minimal bootstrap check for the orchestrator
-   runtime, Git, and source-resolution access. Local mode never installs host tools.
-2. Resolve the requested firmware target and inspect the exact source revision in
-   owned storage. This limited source retrieval may precede the full tool gate;
-   no firmware scripts or dependency installation run during inspection.
-3. Derive the target requirements, report required/preferred versus detected tool
-   versions, and run the full revision-specific prerequisite gate. The Action may
-   apply its allowed repair policy and must recheck the selected requirements.
-4. Only after that gate passes, prepare the selected SDK and project dependencies,
-   verify their resolved versions/commits, and run configure/build. Stop before
-   compilation if setup produces an incompatible SDK or dependency.
+1. Validate input syntax: target, board, platform, and that `--firmware` and
+   `--configs` (when supplied) are existing directories. Local mode never installs
+   host tools.
+2. Materialize the selected source in owned storage and apply any configs overlay.
+3. Check the source's declared minimums against the selected profile, then run
+   tool discovery for that profile.
+4. Only after those checks pass, prepare the SDK, verify its version/commit, and
+   run web-asset generation, configure, and build.
 
-The full gate is mandatory for release and main builds; bootstrap success is not
-build readiness. A standalone `--check-prerequisites` remains a generic host
-report, not certification for an unspecified firmware revision. Selection/listing
-remain non-compiling and do not run build-tool probes. Requirement inspection must
-not be used as a back door to execute config/build scripts during selection.
+A standalone `--check-prerequisites` remains a generic host report, not
+certification for a specific firmware revision. Selection/listing remain
+non-compiling and do not run build-tool probes.
 
 ### Main Artifact Identity
 
-Keep released Pico output naming as documented below. For main, verify the freshly
-generated UF2 using the effective upstream target name and embedded version from
-that commit, rather than expecting `GP2040-CE_0.7.12_Pico.uf2`. Correlate the UF2
-with the just-built ELF/configuration and resolved source metadata; do not rename
-a stale or unrelated file to make it pass validation.
+For main, the expected UF2/ELF names follow upstream's derivation from
+`git describe --tags --always --dirty --abbrev=7` for the materialized source:
+the `X.Y.Z` captured from a leading `vX.Y.Z`, or `0.0.0` when the describe output
+has no such tag. For example, `v0.7.12-123-gabc1234` produces
+`GP2040-CE_0.7.12_Pico.uf2`. The ELF must still embed the full describe string.
+Never rename a stale or unrelated file to pass validation.
 
 Publish a main artifact under
 `artifacts/Pico/main/<full-firmware-commit>/<build-type>/<run-id>/`, using the filename
-`GP2040-CE_main_<full-firmware-commit>_Pico.uf2`. Record the original upstream
-filename and embedded version, requested target, full commit, requirement sources,
-resolved SDK/dependencies/tools, and artifact digest in `build.json`. Main is a
-development build, not an official release or an implicitly hardware-qualified
-image. It must pass the same process, UF2, publication, and provenance checks.
+`GP2040-CE_main_<full-firmware-commit>_Pico.uf2`. `build.json` records the original
+upstream filename and embedded version, requested target, full commit, dirty flag,
+config source (`firmware` or `external`) and external config path, SDK version and
+commit, and artifact digest. Main is a development build, not an official release
+or an implicitly hardware-qualified image. It must pass the same process, UF2,
+publication, and provenance checks.
 
 ## Release-Specific Evidence
 
@@ -224,6 +238,19 @@ selected local commit and its tag. Do not build in, switch, reset, clean, or edi
 the caller's checkout. Uncommitted source changes are not part of a tagged build.
 Do not fetch missing firmware tags into the caller's repository.
 
+For `main`, the default upstream source clones the commit resolved from
+`refs/heads/main` once per invocation. An explicit local `--firmware` main build
+copies the caller's working tree (including uncommitted/untracked files and
+`.git`, excluding `node_modules` and `build`) into owned storage as described in
+[Resolve Once, Build One Commit](#resolve-once-build-one-commit).
+
+When `--configs <dir>` is supplied, `<dir>/<Board>/BoardConfig.h` must exist; the
+directory `<dir>/<Board>` is copied over `configs/<Board>` in the owned source copy
+before any build script runs. A missing board directory or `BoardConfig.h` is a
+fatal validation error. The caller's configs directory is never modified. The
+result records `configSource: "external"` and the absolute configs path; without
+`--configs` it records `configSource: "firmware"`.
+
 Initialize recursive submodules at the selected commit's recorded gitlinks. A
 submodule's configured tracking branch must not override its pinned commit. Record
 the source and submodule commits, and verify the materialized tree before running
@@ -231,11 +258,13 @@ its build scripts. An unavailable object or failed submodule operation is fatal.
 
 ### 3. Prepare SDK and Dependencies
 
-Acquire a separate Pico SDK 2.1.1 checkout from
-`https://github.com/raspberrypi/pico-sdk.git`, resolve and record its commit, and
-initialize its required submodules for this released Pico example. Other targets,
-including main, use the SDK from their resolved requirement profile, not this
-example's hard-coded version. Reuse an existing SDK only after verifying its
+Acquire a separate Pico SDK checkout from
+`https://github.com/raspberrypi/pico-sdk.git` at the selected profile's SDK tag
+(2.1.1 for `v0.7.12`, 2.3.1 for `main`), resolve and record its commit, and
+initialize its required submodules. For `v0.7.12` the commit must equal the pinned
+commit; for `main` the resolved commit is recorded. The same profile's picotool
+version is either the matching prebuilt picotool (see the profile table) or is
+fetched and built by CMake. Reuse an existing SDK only after verifying its
 revision and dependencies; do not modify a developer's managed SDK installation.
 Select the compatible Arm compiler and matching C/C++ libraries explicitly.
 
@@ -255,9 +284,11 @@ deprecates/removes that compatibility API; pass a build-owned pip constraints fi
 containing `setuptools<81` through `PIP_CONSTRAINT` while the upstream requirements
 are installed into the build-local venv. Do not change the upstream requirements
 file or install this constraint globally. Record the resolved setuptools version
-with the other venv packages. Remove this compatibility constraint only when the
-selected nanopb generator no longer requires `pkg_resources` or declares a
-compatible setuptools range itself.
+with the other venv packages. Apply this compatibility constraint only when the
+selected source's `lib/nanopb/extra/requirements.txt` does not declare a
+setuptools requirement itself (or the file is absent); when upstream declares
+one, as GP2040-CE `main` does with `setuptools==81.0.0`, omit the constraints
+file and `PIP_CONSTRAINT` so the upstream pin is honored instead of conflicting.
 
 Root CMake also fetches ArduinoJson at `v6.21.2`; resolve/record the fetched
 revision. SDK host-tool downloads are dependencies too, not an assumed side effect
@@ -295,8 +326,9 @@ tagged CMake reads environment overrides for several settings; clear conflicting
 inherited overrides or set them to the resolved values. Also isolate compiler,
 SDK, generator, Pico-PIO-USB, and Pico-extension discovery from unrelated machine
 settings. Detected tools must be the tools actually used by CMake, including host
-compiler setup for SDK utilities; finding an MSVC executable alone is not a
-complete Visual Studio compile/link environment.
+compiler setup for SDK utilities when they are built from source; finding an MSVC
+executable alone is not a complete Visual Studio compile/link environment. When
+prebuilt `pioasm` and `picotool` are used, Visual Studio is not probed.
 
 The conceptual CMake calls are below. Angle-bracket paths are placeholders for
 owned/verified paths, not literal shell commands to run today:
@@ -314,14 +346,16 @@ Let the tagged `compile_proto.cmake` generate its build-local Python environment
 and protobuf outputs. Require their success, compilation/link success, and the
 SDK's extra-output generation. Do not bypass these stages or substitute a
 preexisting UF2. Verify the CMake cache reflects the requested board, SDK and
-build type, and the generated firmware version is `0.7.12`, not `0.0.0` or a
-different tag. Do not patch upstream source merely to disguise a wrong revision.
+build type, and the generated firmware version matches the selected source's
+`git describe` output (`0.7.12` for the release), not `0.0.0` or a different tag. Do not patch upstream source merely to disguise a wrong revision.
 
 ### 6. Validate and Publish the UF2
 
 The tagged CMake sets the target output name to
-`GP2040-CE_<version>_<board>` and calls `pico_add_extra_outputs`. For this recipe,
-require the fresh build output `GP2040-CE_0.7.12_Pico.uf2`. Do not pick the first
+`GP2040-CE_<version>_<board>` and calls `pico_add_extra_outputs`. For the release
+recipe, require the fresh build output `GP2040-CE_0.7.12_Pico.uf2`; for main,
+require the name derived from the describe output (see
+[Main Artifact Identity](#main-artifact-identity)). Do not pick the first
 match from a broad artifact glob or accept a stale file after a failed process.
 
 Validate with an established UF2 parser or a narrowly tested validator grounded in
@@ -344,6 +378,10 @@ working directory:
 ```text
 artifacts/Pico/v0.7.12/release/<run-id>/
   GP2040-CE_0.7.12_Pico.uf2
+  build.json
+
+artifacts/Pico/main/<full-commit>/<build-type>/<run-id>/
+  GP2040-CE_main_<full-commit>_Pico.uf2
   build.json
 ```
 
@@ -389,7 +427,8 @@ wiring, attached peripherals, existing stored configuration, or hardware behavio
 
 Before marking this recipe qualified, manually test the produced file on a real
 original Pico: back up needed configuration, enter BOOTSEL mode, copy the UF2 to
-the `RPI-RP2` volume, and confirm reboot, expected USB behavior, version `0.7.12`,
+the `RPI-RP2` volume, and confirm reboot, expected USB behavior, the expected
+version (`0.7.12` for the release, the describe output for main),
 and access to the web configurator. Follow the firmware project's update guidance;
 do not automate reset/erase steps or promise preservation of existing settings.
 Record the exact artifact digest and test outcome. Hardware testing is an explicit
@@ -434,10 +473,12 @@ checks above:
 10. Verify main artifact names/metadata identify the full commit and embedded
     upstream version, with the same UF2 validation as releases. Execute a separate
     real main integration before claiming a main revision/tool profile supported.
+11. Test `--configs`: the board overlay replaces the source copy's board config,
+    a missing `<Board>/BoardConfig.h` fails before any build stage, the caller's
+    directories are unchanged, and metadata records the external config path.
 
 The [matrix schema](matrix.md) defines parsing and normalization; matrix execution
-still needs its pending policy decisions documented. Other
-boards/releases, external-config integration, caching, automatic host tool
-installation, and flashing automation are not established by this worked example.
-Do not silently ignore an external-config request while claiming it was built;
-that build path needs its own integration coverage before support is advertised.
+still needs its pending policy decisions documented. External configs are
+supported for the Pico board only (both targets). Other boards (including Pico2),
+other releases, caching, automatic host tool installation, and flashing
+automation are not established by this worked example.

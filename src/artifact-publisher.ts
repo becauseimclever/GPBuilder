@@ -8,6 +8,8 @@ export interface PublishOptions {
   workingDirectory: string;
   runId: string;
   release: string;
+  /** Full firmware commit; required when release is `main`. */
+  commit?: string;
   board: string;
   buildType: string;
   metadata: Record<string, unknown>;
@@ -20,22 +22,52 @@ export interface PublishedArtifact {
   byteSize: number;
 }
 
+interface ArtifactLayout {
+  segments: string[];
+  filename: string;
+  requested: Record<string, string>;
+}
+
+function artifactLayout(options: PublishOptions): ArtifactLayout {
+  if (options.board !== 'Pico' || options.buildType !== 'release') {
+    throw new Error('Artifact publication currently supports Pico release builds only.');
+  }
+  const { board, buildType } = options;
+  if (options.release === 'v0.7.12') {
+    return {
+      segments: [board, 'v0.7.12', buildType],
+      filename: 'GP2040-CE_0.7.12_Pico.uf2',
+      requested: { release: options.release, board, buildType },
+    };
+  }
+  if (options.release === 'main') {
+    const commit = options.commit;
+    if (commit === undefined || !/^[0-9a-f]{40}$/.test(commit)) {
+      throw new Error('Publishing a main build requires the full 40-character lowercase firmware commit.');
+    }
+    return {
+      segments: [board, 'main', commit, buildType],
+      filename: `GP2040-CE_main_${commit}_${board}.uf2`,
+      requested: { release: 'main', commit, board, buildType },
+    };
+  }
+  throw new Error('Artifact publication currently supports v0.7.12 and main builds only.');
+}
+
 export function publishArtifact(options: PublishOptions): PublishedArtifact {
   if (!/^[A-Za-z0-9-]+$/.test(options.runId)) throw new Error('Artifact run ID contains unsupported characters.');
-  if (options.release !== 'v0.7.12' || options.board !== 'Pico' || options.buildType !== 'release') {
-    throw new Error('Artifact publication currently supports v0.7.12, Pico, and release builds only.');
-  }
+  const layout = artifactLayout(options);
   const source = resolve(options.source);
   const sourceStats = lstatSync(source);
   if (!sourceStats.isFile()) throw new Error('The UF2 source must be a regular file.');
   const input = readFileSync(source);
   const validation = validateUf2(input);
-  const parent = resolve(options.workingDirectory, 'artifacts', 'Pico', 'v0.7.12', 'release');
+  const parent = resolve(options.workingDirectory, 'artifacts', ...layout.segments);
   mkdirSync(parent, { recursive: true });
   const destination = join(parent, options.runId);
   if (existsSync(destination)) throw new Error(`Artifact run ${options.runId} already exists.`);
   const staging = mkdtempSync(join(parent, `.tmp-${options.runId}-`));
-  const filename = 'GP2040-CE_0.7.12_Pico.uf2';
+  const { filename } = layout;
   const stagedUf2 = join(staging, filename);
   const stagedMetadata = join(staging, 'build.json');
   const digest = createHash('sha256').update(input).digest('hex');
@@ -49,7 +81,7 @@ export function publishArtifact(options: PublishOptions): PublishedArtifact {
     }
     writeFileSync(stagedMetadata, `${JSON.stringify({
       ...options.metadata,
-      requested: { release: options.release, board: options.board, buildType: options.buildType },
+      requested: layout.requested,
       artifact: {
         filename, byteSize: published.length, sha256: publishedDigest,
         validation: { ...validation, flashStartHex: `0x${validation.addressStart.toString(16)}`, flashEndHex: `0x${validation.addressEnd.toString(16)}` },

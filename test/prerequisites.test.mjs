@@ -333,3 +333,35 @@ test('unrecognized output, broken compiler probes, and malformed vswhere output 
   } });
   assert.equal(results.find((result) => result.name === 'Host C++ compiler').status, 'unusable');
 });
+const noHostCompiler = (command, args) => {
+  if (['c++', 'g++', 'clang++', 'cl', 'clang-cl', 'vswhere'].includes(command)) return missing;
+  return available(command, args);
+};
+
+test('Pico extension prebuilt pioasm and picotool satisfy the host compiler requirement', (context) => {
+  const picoRoot = picoFixture(context, ['tools/2.3.1/pioasm/pioasmConfig.cmake', 'picotool/2.3.1/picotool/picotoolConfig.cmake']);
+  const results = checkPrerequisites({ mode: 'local', host: { ...host, platform: 'win32', picoRoot }, log: () => {}, execute: noHostCompiler });
+  const result = results.find((item) => item.name === 'Host C++ compiler');
+  assert.equal(result.status, 'available');
+  assert.match(result.detail, /\[Pico extension\].*pioasm 2\.3\.1.*picotool 2\.3\.1/);
+});
+
+test('prebuilt fallback requires pioasm and a picotool new enough for SDK 2.3', (context) => {
+  for (const paths of [
+    ['tools/2.3.1/pioasm/pioasmConfig.cmake', 'picotool/2.2.0/picotool/picotoolConfig.cmake'],
+    ['picotool/2.3.1/picotool/picotoolConfig.cmake'],
+  ]) {
+    const picoRoot = picoFixture(context, paths);
+    const results = checkPrerequisites({ mode: 'local', host: { ...host, platform: 'win32', picoRoot }, log: () => {}, execute: noHostCompiler });
+    assert.notEqual(results.find((item) => item.name === 'Host C++ compiler').status, 'available');
+  }
+});
+
+test('invalid explicit CXX still fails when prebuilt tools exist', (context) => {
+  const picoRoot = picoFixture(context, ['tools/2.3.1/pioasm/pioasmConfig.cmake', 'picotool/2.3.1/picotool/picotoolConfig.cmake']);
+  const results = checkPrerequisites({ mode: 'local', host: { ...host, platform: 'win32', picoRoot, cxx: 'not-a-compiler' }, log: () => {}, execute: (command, args) => {
+    if (command === 'not-a-compiler') return missing;
+    return noHostCompiler(command, args);
+  } });
+  assert.notEqual(results.find((item) => item.name === 'Host C++ compiler').status, 'available');
+});

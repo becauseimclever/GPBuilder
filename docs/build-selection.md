@@ -2,12 +2,14 @@
 
 **Status:** The sections through "Acceptance and Verification" describe current
 behavior, including local selection from an exact release tag or the literal
-`main` branch. [Planned CLI Contract](#planned-cli-contract) documents future flags,
-upstream source defaults, and builds; those changes are not implemented. The [matrix schema](matrix.md)
-defines YAML/JSON inputs; matrix execution decisions remain pending.
+`main` branch. [Planned CLI Contract](#planned-cli-contract) documents future flags
+such as short aliases; those are not implemented. The
+[matrix schema](matrix.md) defines YAML/JSON inputs; matrix execution decisions
+remain pending.
 
-The [Pico UF2 build guide](firmware-build.md) specifies the planned two-flag
-`v0.7.12`/`Pico` workflow, required build stages, and artifact acceptance checks.
+The [Pico UF2 build guide](firmware-build.md) specifies the implemented
+`v0.7.12`/`main` Pico build workflow, including local `--firmware` sources and
+`--configs` overlays, required build stages, and artifact acceptance checks.
 
 GPBuilder can list local firmware release tags, list boards, and validate a build
 selection from a local release tag or `main` branch through the CLI or GitHub Action.
@@ -169,14 +171,14 @@ node dist/cli.cjs --build --firmware ../GP2040-CE --release v0.7.12 --board Pico
 `--build` and `command: build` run the mandatory prerequisite gate first, then
 require and validate the same selection. Thus a failed tool check can occur before
 a missing selection-input error. Local builds never install tools; Action builds
-retain the Ubuntu repair policy. After the gate and selection pass, build still
-fails explicitly because compilation is not implemented. No firmware is produced.
+retain the Ubuntu repair policy. Compilation, supported release/board pairs, source
+and config folder handling, and artifacts are specified in
+[firmware build](./firmware-build.md).
 
 Selection confirms directory/header presence, not header correctness, CMake
 compatibility, SDK availability, or compilability. Config CMake files are not
-executed. Source materialization, external-config integration into the firmware
-build system, release-dependent toolchains, and artifact production remain future
-work. Use trusted firmware/config sources when execution is added.
+executed by selection; builds execute firmware and config CMake, so use trusted
+firmware and config sources.
 
 ## Acceptance and Verification
 
@@ -217,7 +219,7 @@ changed defaults in this section are still planned.
 | `-l` | `--list-releases` | None | List release tags from the selected firmware source | Existing long flag; currently local-only |
 | `-L` | `--list-boards` | None | List boards for a specified firmware release and config source | Existing long flag |
 | `-s` | `--select-build` | None | Resolve and validate a selection without compiling | Existing long flag |
-| `-B` | `--build` | None | Request a firmware build; default operation for a complete release/board pair without another operation or matrix | Existing long flag; compilation not implemented |
+| `-B` | `--build` | None | Request a firmware build; default operation for a complete release/board pair without another operation or matrix | Existing long flag; builds specified in [firmware build](firmware-build.md) |
 | `-r` | `--release` | Exact tag or `main` | Firmware target; tags retain their `v` prefix, and main resolves to one commit per invocation; no implicit latest | Existing long flag; local main selection implemented |
 | `-b` | `--board` | Name | Exact, case-sensitive board folder name; no default board | Existing long flag |
 | `-c` | `--configs` | Directory | Optional directory containing board folders; defaults to `configs/` in the selected firmware revision | Existing long flag |

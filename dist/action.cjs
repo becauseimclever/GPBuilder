@@ -19552,9 +19552,44 @@ function info(message) {
 
 // src/prerequisites.ts
 var import_node_child_process = require("node:child_process");
-var import_node_fs = require("node:fs");
+var import_node_fs2 = require("node:fs");
 var import_node_os = require("node:os");
+var import_node_path2 = require("node:path");
+
+// src/pico-prebuilt-tools.ts
+var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
+var MINIMUM_PREBUILT_PICOTOOL = "2.3.0";
+var compareNumeric = (left, right) => left.replace(/^v/, "").localeCompare(right.replace(/^v/, ""), "en", { numeric: true });
+function versionDirectories(root) {
+  try {
+    return (0, import_node_fs.readdirSync)(root, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^v?\d/.test(entry.name)).map((entry) => entry.name).sort((left, right) => compareNumeric(right, left));
+  } catch {
+    return [];
+  }
+}
+function isFile(path) {
+  try {
+    return (0, import_node_fs.statSync)(path).isFile();
+  } catch {
+    return false;
+  }
+}
+function findPicoPrebuiltTools(picoRoot, sdkTag) {
+  const pioasmRoot = (0, import_node_path.join)(picoRoot, "tools");
+  const pioasmVersion = versionDirectories(pioasmRoot).filter((version) => sdkTag === void 0 || version.replace(/^v/, "") === sdkTag.replace(/^v/, "")).find((version) => isFile((0, import_node_path.join)(pioasmRoot, version, "pioasm", "pioasmConfig.cmake")));
+  const picotoolRoot = (0, import_node_path.join)(picoRoot, "picotool");
+  const picotoolVersion = versionDirectories(picotoolRoot).filter((version) => compareNumeric(version, MINIMUM_PREBUILT_PICOTOOL) >= 0).find((version) => isFile((0, import_node_path.join)(picotoolRoot, version, "picotool", "picotoolConfig.cmake")));
+  if (!pioasmVersion || !picotoolVersion) return void 0;
+  return {
+    pioasmVersion,
+    pioasmDir: (0, import_node_path.join)(pioasmRoot, pioasmVersion, "pioasm"),
+    picotoolVersion,
+    picotoolDir: (0, import_node_path.join)(picotoolRoot, picotoolVersion, "picotool")
+  };
+}
+
+// src/prerequisites.ts
 var requirements = [
   {
     name: "Node.js 24 on PATH",
@@ -19675,7 +19710,7 @@ function currentHost() {
   let ubuntu = false;
   if (process.platform === "linux") {
     try {
-      ubuntu = /^ID=(?:ubuntu|"ubuntu")$/m.test((0, import_node_fs.readFileSync)("/etc/os-release", "utf8"));
+      ubuntu = /^ID=(?:ubuntu|"ubuntu")$/m.test((0, import_node_fs2.readFileSync)("/etc/os-release", "utf8"));
     } catch {
       ubuntu = false;
     }
@@ -19684,11 +19719,11 @@ function currentHost() {
     platform: process.platform,
     ubuntu,
     githubActions: process.env.GITHUB_ACTIONS === "true",
-    picoRoot: (0, import_node_path.join)((0, import_node_os.homedir)(), ".pico-sdk"),
+    picoRoot: (0, import_node_path2.join)((0, import_node_os.homedir)(), ".pico-sdk"),
     arch: process.arch,
     ...process.env.CXX ? { cxx: process.env.CXX } : {},
     ...process.platform === "win32" && process.env["ProgramFiles(x86)"] ? {
-      vswhere: (0, import_node_path.join)(process.env["ProgramFiles(x86)"], "Microsoft Visual Studio", "Installer", "vswhere.exe")
+      vswhere: (0, import_node_path2.join)(process.env["ProgramFiles(x86)"], "Microsoft Visual Studio", "Installer", "vswhere.exe")
     } : {}
   };
 }
@@ -19712,13 +19747,13 @@ function visualStudioCompilers(execute, host) {
     const architecture = host.arch === "arm64" ? "arm64" : host.arch === "ia32" ? "x86" : "x64";
     for (const installation of entries) {
       if (typeof installation !== "object" || installation === null || !("installationPath" in installation) || typeof installation.installationPath !== "string") continue;
-      const root = (0, import_node_path.join)(installation.installationPath, "VC", "Tools", "MSVC");
+      const root = (0, import_node_path2.join)(installation.installationPath, "VC", "Tools", "MSVC");
       try {
-        const versions = (0, import_node_fs.readdirSync)(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort((left, right) => right.localeCompare(left, "en", { numeric: true }));
+        const versions = (0, import_node_fs2.readdirSync)(root, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort((left, right) => right.localeCompare(left, "en", { numeric: true }));
         for (const version of versions) {
-          const compiler = (0, import_node_path.join)(root, version, "bin", `Host${architecture}`, architecture, "cl.exe");
+          const compiler = (0, import_node_path2.join)(root, version, "bin", `Host${architecture}`, architecture, "cl.exe");
           try {
-            if ((0, import_node_fs.statSync)(compiler).isFile()) compilers.push(compiler);
+            if ((0, import_node_fs2.statSync)(compiler).isFile()) compilers.push(compiler);
           } catch {
             continue;
           }
@@ -19772,7 +19807,7 @@ ${result.stderr}`.trim();
   }
   if (host.platform === "darwin") {
     const located = execute("xcrun", ["--find", "clang++"], 1e4);
-    if (located.status === 0 && !located.error && (0, import_node_path.isAbsolute)(located.stdout.trim())) {
+    if (located.status === 0 && !located.error && (0, import_node_path2.isAbsolute)(located.stdout.trim())) {
       const result = probe(located.stdout.trim(), "Xcode");
       if (result) return result;
     }
@@ -19782,6 +19817,15 @@ ${result.stderr}`.trim();
       const result = probe(command, "Visual Studio");
       if (result) return result;
     }
+  }
+  const prebuilt = host.picoRoot ? findPicoPrebuiltTools(host.picoRoot) : void 0;
+  if (prebuilt) {
+    return {
+      name: requirement.name,
+      status: "available",
+      detail: `[Pico extension] prebuilt pioasm ${prebuilt.pioasmVersion} and picotool ${prebuilt.picotoolVersion}; host compiler not required`,
+      guidance: requirement.guidance
+    };
   }
   return failure;
 }
@@ -19795,13 +19839,13 @@ function picoCandidates(command, host) {
   };
   const layout = layouts[command];
   if (!layout) return [];
-  const root = (0, import_node_path.join)(host.picoRoot, layout.directory);
+  const root = (0, import_node_path2.join)(host.picoRoot, layout.directory);
   try {
-    const versions = (0, import_node_fs.readdirSync)(root, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^v?\d/.test(entry.name)).map((entry) => entry.name).sort((left, right) => right.replace(/^v/, "").localeCompare(left.replace(/^v/, ""), "en", { numeric: true }));
+    const versions = (0, import_node_fs2.readdirSync)(root, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^v?\d/.test(entry.name)).map((entry) => entry.name).sort((left, right) => right.replace(/^v/, "").localeCompare(left.replace(/^v/, ""), "en", { numeric: true }));
     const executable = `${command}${host.platform === "win32" ? ".exe" : ""}`;
-    return versions.flatMap((version) => layout.paths.map((parts) => (0, import_node_path.join)(root, version, ...parts, executable))).filter((candidate) => {
+    return versions.flatMap((version) => layout.paths.map((parts) => (0, import_node_path2.join)(root, version, ...parts, executable))).filter((candidate) => {
       try {
-        return (0, import_node_fs.statSync)(candidate).isFile();
+        return (0, import_node_fs2.statSync)(candidate).isFile();
       } catch {
         return false;
       }
@@ -19821,7 +19865,7 @@ function detect(execute, host) {
     if (requirement.command === "ninja") candidates.push("make");
     candidates.push(...picoCandidates(requirement.command, host));
     if (armDirectory && requirement.command.startsWith("arm-none-eabi-")) {
-      candidates = [(0, import_node_path.join)(armDirectory, `${requirement.command}${host.platform === "win32" ? ".exe" : ""}`)];
+      candidates = [(0, import_node_path2.join)(armDirectory, `${requirement.command}${host.platform === "win32" ? ".exe" : ""}`)];
     }
     if (previous) candidates = [previous];
     let command = requirement.command;
@@ -19841,8 +19885,8 @@ ${attempt.stderr}`.trim();
       if (accepted) {
         available = true;
         selected.set(requirement.command, candidate);
-        if (requirement.command === "arm-none-eabi-gcc" && (0, import_node_path.isAbsolute)(candidate)) {
-          armDirectory = (0, import_node_path.dirname)(candidate);
+        if (requirement.command === "arm-none-eabi-gcc" && (0, import_node_path2.isAbsolute)(candidate)) {
+          armDirectory = (0, import_node_path2.dirname)(candidate);
         }
         break;
       }
@@ -19852,7 +19896,7 @@ ${attempt.stderr}`.trim();
     return {
       name: requirement.name,
       status,
-      detail: `${(0, import_node_path.isAbsolute)(command) ? "[Pico extension] " : ""}${command}: ${detail || `exit ${String(result.status)}`}`,
+      detail: `${(0, import_node_path2.isAbsolute)(command) ? "[Pico extension] " : ""}${command}: ${detail || `exit ${String(result.status)}`}`,
       guidance: requirement.guidance
     };
   });
@@ -19899,13 +19943,13 @@ function checkPrerequisites(options) {
 
 // src/build-selection.ts
 var import_node_child_process2 = require("node:child_process");
-var import_node_fs2 = require("node:fs");
-var import_node_path2 = require("node:path");
+var import_node_fs3 = require("node:fs");
+var import_node_path3 = require("node:path");
 var releasePattern = /^v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
 var boardPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 function git(firmware, args) {
   try {
-    return (0, import_node_child_process2.execFileSync)("git", ["-C", (0, import_node_path2.resolve)(firmware), ...args], {
+    return (0, import_node_child_process2.execFileSync)("git", ["-C", (0, import_node_path3.resolve)(firmware), ...args], {
       encoding: "utf8",
       timeout: 1e4,
       maxBuffer: 4 * 1024 * 1024,
@@ -19914,7 +19958,7 @@ function git(firmware, args) {
     });
   } catch (error2) {
     const detail = error2 instanceof Error ? error2.message : String(error2);
-    throw new Error(`Cannot read firmware repository at ${(0, import_node_path2.resolve)(firmware)}. Ensure Git is installed and the checkout/tag is available locally. ${detail}`, { cause: error2 });
+    throw new Error(`Cannot read firmware repository at ${(0, import_node_path3.resolve)(firmware)}. Ensure Git is installed and the checkout/tag is available locally. ${detail}`, { cause: error2 });
   }
 }
 function listReleases(firmware) {
@@ -19948,11 +19992,11 @@ function targetCommit(firmware, target) {
 }
 function externalDirectory(configs) {
   try {
-    const directory = (0, import_node_fs2.realpathSync)((0, import_node_path2.resolve)(configs));
-    if (!(0, import_node_fs2.lstatSync)(directory).isDirectory()) throw new Error("Not a directory");
+    const directory = (0, import_node_fs3.realpathSync)((0, import_node_path3.resolve)(configs));
+    if (!(0, import_node_fs3.lstatSync)(directory).isDirectory()) throw new Error("Not a directory");
     return directory;
   } catch (error2) {
-    throw new Error(`Cannot read external config directory: ${(0, import_node_path2.resolve)(configs)}`, { cause: error2 });
+    throw new Error(`Cannot read external config directory: ${(0, import_node_path3.resolve)(configs)}`, { cause: error2 });
   }
 }
 function discoverBoards(firmware, commit, configs) {
@@ -19960,9 +20004,9 @@ function discoverBoards(firmware, commit, configs) {
   if (configs !== void 0) {
     const directory = externalDirectory(configs);
     try {
-      boards = (0, import_node_fs2.readdirSync)(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory() && boardPattern.test(entry.name)).filter((entry) => {
+      boards = (0, import_node_fs3.readdirSync)(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory() && boardPattern.test(entry.name)).filter((entry) => {
         try {
-          return (0, import_node_fs2.lstatSync)((0, import_node_path2.join)(directory, entry.name, "BoardConfig.h")).isFile();
+          return (0, import_node_fs3.lstatSync)((0, import_node_path3.join)(directory, entry.name, "BoardConfig.h")).isFile();
         } catch {
           return false;
         }
@@ -19990,25 +20034,25 @@ function selectBuild(firmware, release, board, configs) {
     throw new Error(`Unknown board ${board} in ${configs === void 0 ? `release ${release}` : "external configs"}. Use list-boards to see available names.`);
   }
   return {
-    firmware: (0, import_node_path2.resolve)(firmware),
+    firmware: (0, import_node_path3.resolve)(firmware),
     release,
     commit,
     board,
     configSource: configs === void 0 ? "firmware" : "external",
-    configPath: configs === void 0 ? `configs/${board}` : (0, import_node_path2.join)(externalDirectory(configs), board)
+    configPath: configs === void 0 ? `configs/${board}` : (0, import_node_path3.join)(externalDirectory(configs), board)
   };
 }
 
 // src/firmware-build.ts
 var import_node_crypto2 = require("node:crypto");
-var import_node_fs5 = require("node:fs");
+var import_node_fs6 = require("node:fs");
 var import_node_os2 = require("node:os");
-var import_node_path5 = require("node:path");
+var import_node_path6 = require("node:path");
 
 // src/artifact-publisher.ts
 var import_node_crypto = require("node:crypto");
-var import_node_fs3 = require("node:fs");
-var import_node_path3 = require("node:path");
+var import_node_fs4 = require("node:fs");
+var import_node_path4 = require("node:path");
 
 // src/uf2.ts
 var blockSize = 512;
@@ -20072,35 +20116,58 @@ function validateUf2(data) {
 }
 
 // src/artifact-publisher.ts
+function artifactLayout(options) {
+  if (options.board !== "Pico" || options.buildType !== "release") {
+    throw new Error("Artifact publication currently supports Pico release builds only.");
+  }
+  const { board, buildType } = options;
+  if (options.release === "v0.7.12") {
+    return {
+      segments: [board, "v0.7.12", buildType],
+      filename: "GP2040-CE_0.7.12_Pico.uf2",
+      requested: { release: options.release, board, buildType }
+    };
+  }
+  if (options.release === "main") {
+    const commit = options.commit;
+    if (commit === void 0 || !/^[0-9a-f]{40}$/.test(commit)) {
+      throw new Error("Publishing a main build requires the full 40-character lowercase firmware commit.");
+    }
+    return {
+      segments: [board, "main", commit, buildType],
+      filename: `GP2040-CE_main_${commit}_${board}.uf2`,
+      requested: { release: "main", commit, board, buildType }
+    };
+  }
+  throw new Error("Artifact publication currently supports v0.7.12 and main builds only.");
+}
 function publishArtifact(options) {
   if (!/^[A-Za-z0-9-]+$/.test(options.runId)) throw new Error("Artifact run ID contains unsupported characters.");
-  if (options.release !== "v0.7.12" || options.board !== "Pico" || options.buildType !== "release") {
-    throw new Error("Artifact publication currently supports v0.7.12, Pico, and release builds only.");
-  }
-  const source = (0, import_node_path3.resolve)(options.source);
-  const sourceStats = (0, import_node_fs3.lstatSync)(source);
+  const layout = artifactLayout(options);
+  const source = (0, import_node_path4.resolve)(options.source);
+  const sourceStats = (0, import_node_fs4.lstatSync)(source);
   if (!sourceStats.isFile()) throw new Error("The UF2 source must be a regular file.");
-  const input = (0, import_node_fs3.readFileSync)(source);
+  const input = (0, import_node_fs4.readFileSync)(source);
   const validation = validateUf2(input);
-  const parent = (0, import_node_path3.resolve)(options.workingDirectory, "artifacts", "Pico", "v0.7.12", "release");
-  (0, import_node_fs3.mkdirSync)(parent, { recursive: true });
-  const destination = (0, import_node_path3.join)(parent, options.runId);
-  if ((0, import_node_fs3.existsSync)(destination)) throw new Error(`Artifact run ${options.runId} already exists.`);
-  const staging = (0, import_node_fs3.mkdtempSync)((0, import_node_path3.join)(parent, `.tmp-${options.runId}-`));
-  const filename = "GP2040-CE_0.7.12_Pico.uf2";
-  const stagedUf2 = (0, import_node_path3.join)(staging, filename);
-  const stagedMetadata = (0, import_node_path3.join)(staging, "build.json");
+  const parent = (0, import_node_path4.resolve)(options.workingDirectory, "artifacts", ...layout.segments);
+  (0, import_node_fs4.mkdirSync)(parent, { recursive: true });
+  const destination = (0, import_node_path4.join)(parent, options.runId);
+  if ((0, import_node_fs4.existsSync)(destination)) throw new Error(`Artifact run ${options.runId} already exists.`);
+  const staging = (0, import_node_fs4.mkdtempSync)((0, import_node_path4.join)(parent, `.tmp-${options.runId}-`));
+  const { filename } = layout;
+  const stagedUf2 = (0, import_node_path4.join)(staging, filename);
+  const stagedMetadata = (0, import_node_path4.join)(staging, "build.json");
   const digest = (0, import_node_crypto.createHash)("sha256").update(input).digest("hex");
   try {
-    (0, import_node_fs3.copyFileSync)(source, stagedUf2);
-    const published = (0, import_node_fs3.readFileSync)(stagedUf2);
+    (0, import_node_fs4.copyFileSync)(source, stagedUf2);
+    const published = (0, import_node_fs4.readFileSync)(stagedUf2);
     const publishedDigest = (0, import_node_crypto.createHash)("sha256").update(published).digest("hex");
     if (published.length !== input.length || publishedDigest !== digest) {
       throw new Error("Published UF2 size or SHA-256 does not match the validated build output.");
     }
-    (0, import_node_fs3.writeFileSync)(stagedMetadata, `${JSON.stringify({
+    (0, import_node_fs4.writeFileSync)(stagedMetadata, `${JSON.stringify({
       ...options.metadata,
-      requested: { release: options.release, board: options.board, buildType: options.buildType },
+      requested: layout.requested,
       artifact: {
         filename,
         byteSize: published.length,
@@ -20109,24 +20176,24 @@ function publishArtifact(options) {
       }
     }, null, 2)}
 `, { flag: "wx" });
-    (0, import_node_fs3.renameSync)(staging, destination);
+    (0, import_node_fs4.renameSync)(staging, destination);
   } catch (error2) {
-    (0, import_node_fs3.rmSync)(staging, { recursive: true, force: true });
+    (0, import_node_fs4.rmSync)(staging, { recursive: true, force: true });
     throw error2;
   }
-  const path = (0, import_node_path3.join)(destination, filename);
-  const metadataPath = (0, import_node_path3.join)(destination, "build.json");
-  const finalStats = (0, import_node_fs3.lstatSync)(path);
+  const path = (0, import_node_path4.join)(destination, filename);
+  const metadataPath = (0, import_node_path4.join)(destination, "build.json");
+  const finalStats = (0, import_node_fs4.lstatSync)(path);
   if (!finalStats.isFile()) throw new Error("Published UF2 is not a regular file.");
-  const finalBytes = (0, import_node_fs3.readFileSync)(path);
+  const finalBytes = (0, import_node_fs4.readFileSync)(path);
   const finalDigest = (0, import_node_crypto.createHash)("sha256").update(finalBytes).digest("hex");
   if (finalStats.size !== input.length || finalDigest !== digest) throw new Error("Published UF2 verification failed.");
-  return { path: (0, import_node_path3.resolve)(path), metadataPath: (0, import_node_path3.resolve)(metadataPath), sha256: finalDigest, byteSize: finalStats.size };
+  return { path: (0, import_node_path4.resolve)(path), metadataPath: (0, import_node_path4.resolve)(metadataPath), sha256: finalDigest, byteSize: finalStats.size };
 }
 
 // src/firmware-source.ts
-var import_node_fs4 = require("node:fs");
-var import_node_path4 = require("node:path");
+var import_node_fs5 = require("node:fs");
+var import_node_path5 = require("node:path");
 
 // src/process-runner.ts
 var import_node_child_process3 = require("node:child_process");
@@ -20204,19 +20271,51 @@ ${stderr || stdout}`));
 
 // src/firmware-source.ts
 var upstreamRepository = "https://github.com/OpenStickCommunity/GP2040-CE.git";
-var supportedRelease = "v0.7.12";
+var taggedRelease = "v0.7.12";
+var mainTarget = "main";
+var excludedCopySegments = /* @__PURE__ */ new Set(["node_modules", "build"]);
 async function git2(execute, directory, args, timeoutMs = 6e5) {
   const result = await execute("git", ["-C", directory, ...args], { cwd: directory, timeoutMs, stage: `Git ${args[0]}` });
   return result.stdout.trim();
 }
-async function materializeFirmware(options) {
-  const { release } = options;
-  if (release !== supportedRelease) throw new Error("This build currently supports the exact tag v0.7.12 only.");
-  const execute = options.execute ?? executeProcess;
-  const directory = (0, import_node_path4.resolve)(options.destination);
-  if ((0, import_node_fs4.existsSync)(directory)) throw new Error(`Firmware destination already exists: ${directory}`);
-  if (options.source !== void 0) {
-    await execute("git", ["clone", "--no-hardlinks", "--no-checkout", "--", (0, import_node_path4.resolve)(options.source), directory], {
+async function checkoutVerified(execute, directory, commit, release) {
+  await git2(execute, directory, ["checkout", "--quiet", "--detach", commit], 1e4);
+  if (await git2(execute, directory, ["rev-parse", "HEAD"], 1e4) !== commit) {
+    throw new Error(`Materialized firmware does not match ${release}.`);
+  }
+}
+async function requireRootCmake(execute, directory, release) {
+  const rootCmake = await git2(execute, directory, ["ls-tree", "-z", "HEAD", "--", "CMakeLists.txt"], 1e4);
+  if (!/^100(?:644|755) blob [a-f0-9]+\tCMakeLists\.txt\0$/.test(rootCmake)) {
+    throw new Error(`Firmware ${release} does not contain a regular root CMakeLists.txt.`);
+  }
+}
+function copyWorkingTree(source, directory) {
+  (0, import_node_fs5.cpSync)(source, directory, {
+    recursive: true,
+    filter: (path) => !(0, import_node_path5.relative)(source, path).split(import_node_path5.sep).some((segment) => excludedCopySegments.has(segment))
+  });
+}
+async function materializeLocalMain(execute, source, directory) {
+  copyWorkingTree(source, directory);
+  const commit = await git2(execute, directory, ["rev-parse", "--verify", "HEAD^{commit}"], 1e4);
+  await git2(execute, directory, ["submodule", "update", "--init", "--recursive"]);
+  const dirty = await git2(execute, directory, ["status", "--porcelain"], 6e4) !== "";
+  return { directory, commit, tag: mainTarget, dirty };
+}
+async function materializeUpstreamMain(execute, directory) {
+  await execute("git", ["init", "--quiet", directory], { timeoutMs: 1e4, stage: "Initialize firmware source" });
+  await git2(execute, directory, ["remote", "add", "origin", upstreamRepository], 1e4);
+  await git2(execute, directory, ["fetch", "--filter=blob:none", "origin", "+refs/heads/main:refs/remotes/origin/main"]);
+  const commit = await git2(execute, directory, ["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], 1e4);
+  await checkoutVerified(execute, directory, commit, mainTarget);
+  await requireRootCmake(execute, directory, mainTarget);
+  await git2(execute, directory, ["submodule", "update", "--init", "--recursive"]);
+  return { directory, commit, tag: mainTarget, dirty: false };
+}
+async function materializeTag(execute, source, directory, release) {
+  if (source !== void 0) {
+    await execute("git", ["clone", "--no-hardlinks", "--no-checkout", "--", source, directory], {
       timeoutMs: 6e5,
       stage: "Clone local firmware source"
     });
@@ -20226,54 +20325,170 @@ async function materializeFirmware(options) {
     await git2(execute, directory, ["fetch", "--depth=1", "origin", `refs/tags/${release}:refs/tags/${release}`]);
   }
   const commit = await git2(execute, directory, ["rev-parse", "--verify", `refs/tags/${release}^{commit}`], 1e4);
-  await git2(execute, directory, ["checkout", "--quiet", "--detach", commit], 1e4);
-  if (await git2(execute, directory, ["rev-parse", "HEAD"], 1e4) !== commit) {
-    throw new Error(`Materialized firmware does not match release ${release}.`);
-  }
-  const rootCmake = await git2(execute, directory, ["ls-tree", "-z", "HEAD", "--", "CMakeLists.txt"], 1e4);
-  if (!/^100(?:644|755) blob [a-f0-9]+\tCMakeLists\.txt\0$/.test(rootCmake)) {
-    throw new Error(`Release ${release} does not contain a regular root CMakeLists.txt.`);
-  }
+  await checkoutVerified(execute, directory, commit, release);
+  await requireRootCmake(execute, directory, release);
   await git2(execute, directory, ["submodule", "update", "--init", "--recursive"]);
   if (await git2(execute, directory, ["status", "--porcelain", "--untracked-files=all"], 1e4)) {
     throw new Error(`Materialized firmware checkout for ${release} is not clean.`);
   }
-  return { directory, commit, tag: release };
+  return { directory, commit, tag: release, dirty: false };
+}
+async function materializeFirmware(options) {
+  const { release } = options;
+  if (release !== taggedRelease && release !== mainTarget) {
+    throw new Error("This build currently supports the exact tag v0.7.12 or main only.");
+  }
+  const execute = options.execute ?? executeProcess;
+  const directory = (0, import_node_path5.resolve)(options.destination);
+  if ((0, import_node_fs5.existsSync)(directory)) throw new Error(`Firmware destination already exists: ${directory}`);
+  const source = options.source === void 0 ? void 0 : (0, import_node_path5.resolve)(options.source);
+  if (release === mainTarget) {
+    return source === void 0 ? materializeUpstreamMain(execute, directory) : materializeLocalMain(execute, source, directory);
+  }
+  return materializeTag(execute, source, directory, release);
+}
+function applyConfigsOverlay(firmwareDirectory, configsDirectory, board) {
+  const overlaySource = (0, import_node_path5.resolve)(configsDirectory, board);
+  if (!(0, import_node_fs5.existsSync)((0, import_node_path5.join)(overlaySource, "BoardConfig.h"))) {
+    throw new Error(`Configs folder must contain ${board}/BoardConfig.h: ${overlaySource}`);
+  }
+  const target = (0, import_node_path5.resolve)(firmwareDirectory, "configs", board);
+  (0, import_node_fs5.rmSync)(target, { recursive: true, force: true });
+  (0, import_node_fs5.mkdirSync)((0, import_node_path5.dirname)(target), { recursive: true });
+  (0, import_node_fs5.cpSync)(overlaySource, target, { recursive: true });
+  return target;
 }
 
 // src/firmware-build.ts
-var firmwareRelease = "v0.7.12";
-var firmwareCommit = "0014e4ae2a312332e2582f6708dcc7d6bec5de8c";
-var sdkCommit = "bddd20f928ce76142793bef434d4f75f4af6e433";
+var taggedRelease2 = "v0.7.12";
 var cmakeVersion = "4.3.4";
 var ninjaVersion = "1.13.2";
 var armToolchainVersion = "15_2_Rel1";
 var armCompilerVersion = "15.2.1";
-var sdkTag = "2.1.1";
+var toolProfiles = {
+  [taggedRelease2]: {
+    sdkTag: "2.1.1",
+    sdkCommit: "bddd20f928ce76142793bef434d4f75f4af6e433",
+    picotool: "2.1.1",
+    firmwareCommit: "0014e4ae2a312332e2582f6708dcc7d6bec5de8c"
+  },
+  main: { sdkTag: "2.3.1", picotool: "2.3.1" }
+};
+function selectToolProfile(release) {
+  const profile = Object.hasOwn(toolProfiles, release) ? toolProfiles[release] : void 0;
+  if (!profile) throw new Error(`Firmware builds support only release v0.7.12 or main; received ${release}.`);
+  return profile;
+}
+function versionParts(version) {
+  return version.split(/[._]|Rel/).filter((part) => part !== "").map((part) => Number.parseInt(part, 10) || 0);
+}
+function compareVersions(a, b) {
+  const left = versionParts(a);
+  const right = versionParts(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference < 0 ? -1 : 1;
+  }
+  return 0;
+}
+function parseCmakeMinimums(text) {
+  const setting = (name) => new RegExp(`^\\s*set\\(\\s*${name}\\s+([^\\s)]+)\\s*\\)`, "im").exec(text)?.[1];
+  const guard = /PICO_SDK_VERSION_STRING\s+VERSION_LESS\s+"([^"]+)"/i.exec(text)?.[1];
+  const sdkCandidates = [setting("sdkVersion"), guard].filter((value) => value !== void 0);
+  const minimums = {};
+  if (sdkCandidates.length > 0) {
+    minimums.sdk = sdkCandidates.reduce((highest, value) => compareVersions(value, highest) > 0 ? value : highest);
+  }
+  const toolchain = setting("toolchainVersion");
+  if (toolchain !== void 0) minimums.toolchain = toolchain;
+  const picotool = setting("picotoolVersion");
+  if (picotool !== void 0) minimums.picotool = picotool;
+  return minimums;
+}
+function checkMinimums(minimums, profile) {
+  const requirements2 = [
+    ["Pico SDK", minimums.sdk, profile.sdkTag],
+    ["Arm GNU toolchain", minimums.toolchain, armToolchainVersion],
+    ["picotool", minimums.picotool, profile.picotool]
+  ];
+  for (const [name, required2, pinned] of requirements2) {
+    if (required2 === void 0) {
+      if (name !== "Pico SDK") continue;
+      throw new Error(`The ${name} minimum version is not declared in the firmware CMakeLists.txt; refusing to guess.`);
+    }
+    if (compareVersions(required2, pinned) > 0) {
+      throw new Error(`The firmware requires ${name} ${required2}, but this build profile pinned ${pinned}.`);
+    }
+  }
+}
+function firmwareOutputName(describe, board) {
+  const version = /^v(\d+\.\d+\.\d+)/.exec(describe)?.[1] ?? "0.0.0";
+  return `GP2040-CE_${version}_${board}`;
+}
+function nanopbPipConstraint(requirementsText) {
+  if (requirementsText !== void 0 && /^\s*setuptools\b/im.test(requirementsText)) {
+    return void 0;
+  }
+  return "setuptools<81\n";
+}
+function firmwareConfigureArgs(input) {
+  const hostTools = input.prebuilt === void 0 ? [`-DPICOTOOL_FETCH_FROM_GIT_PATH=${input.toolsDirectory}`] : [`-Dpioasm_DIR=${input.prebuilt.pioasmDir}`, `-Dpicotool_DIR=${input.prebuilt.picotoolDir}`];
+  return [
+    "-S",
+    input.sourceDirectory,
+    "-B",
+    input.buildDirectory,
+    "-G",
+    "Ninja",
+    `-DCMAKE_MAKE_PROGRAM=${input.ninja}`,
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DGP2040_BOARDCONFIG=Pico",
+    "-DPICO_BOARD=pico",
+    "-DPICO_PLATFORM=rp2040",
+    `-DPICO_SDK_PATH=${input.sdkDirectory}`,
+    `-DPython3_EXECUTABLE=${input.python}`,
+    "-DSKIP_SUBMODULES=TRUE",
+    "-DSKIP_WEBBUILD=TRUE",
+    ...hostTools
+  ];
+}
 function validateFirmwareBuildRequest(options) {
-  if (options.release !== firmwareRelease || options.board !== "Pico" || options.configs !== void 0) {
-    throw new Error("Firmware builds currently support only release v0.7.12, board Pico, built-in configs, and Release build type.");
+  selectToolProfile(options.release);
+  if (options.board !== "Pico") {
+    throw new Error("Firmware builds currently support only board Pico and the Release build type.");
   }
   if ((options.platform ?? process.platform) !== "win32") {
-    throw new Error("The v0.7.12 Pico build has only been integration-qualified on Windows x64.");
+    throw new Error("The Pico firmware build has only been integration-qualified on Windows x64.");
+  }
+  if (options.firmware !== void 0 && !isDirectory2(options.firmware)) {
+    throw new Error(`Firmware source folder was not found: ${options.firmware}`);
+  }
+  if (options.configs !== void 0 && !isDirectory2(options.configs)) {
+    throw new Error(`Configs folder was not found: ${options.configs}`);
+  }
+}
+function isDirectory2(path) {
+  try {
+    return (0, import_node_fs6.statSync)(path).isDirectory();
+  } catch {
+    return false;
   }
 }
 function requireFile(path, description) {
-  if (!(0, import_node_fs5.existsSync)(path) || !(0, import_node_fs5.lstatSync)(path).isFile()) throw new Error(`${description} was not found: ${path}`);
+  if (!(0, import_node_fs6.existsSync)(path) || !(0, import_node_fs6.lstatSync)(path).isFile()) throw new Error(`${description} was not found: ${path}`);
   return path;
 }
 async function runProcess(execute, command, args, stage, timeoutMs, options = {}) {
   return execute(command, args, { ...options, timeoutMs, stage });
 }
-async function discoverToolchain(options, execute) {
-  const picoRoot = (0, import_node_path5.resolve)(options.picoRoot ?? (0, import_node_path5.join)((0, import_node_os2.homedir)(), ".pico-sdk"));
-  const cmake = requireFile((0, import_node_path5.join)(picoRoot, "cmake", `v${cmakeVersion}`, "bin", "cmake.exe"), `CMake ${cmakeVersion}`);
-  const ninja = requireFile((0, import_node_path5.join)(picoRoot, "ninja", `v${ninjaVersion}`, "ninja.exe"), `Ninja ${ninjaVersion}`);
-  const armBin = (0, import_node_path5.join)(picoRoot, "toolchain", armToolchainVersion, "bin");
-  const gcc = requireFile((0, import_node_path5.join)(armBin, "arm-none-eabi-gcc.exe"), `Arm GNU ${armToolchainVersion} GCC`);
-  const gxx = requireFile((0, import_node_path5.join)(armBin, "arm-none-eabi-g++.exe"), `Arm GNU ${armToolchainVersion} G++`);
-  const vswhere = (0, import_node_path5.resolve)(options.vswhere ?? (0, import_node_path5.join)(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe"));
-  requireFile(vswhere, "Visual Studio instance locator");
+async function discoverToolchain(options, execute, sdkTag) {
+  const picoRoot = (0, import_node_path6.resolve)(options.picoRoot ?? (0, import_node_path6.join)((0, import_node_os2.homedir)(), ".pico-sdk"));
+  const prebuilt = findPicoPrebuiltTools(picoRoot, sdkTag);
+  const cmake = requireFile((0, import_node_path6.join)(picoRoot, "cmake", `v${cmakeVersion}`, "bin", "cmake.exe"), `CMake ${cmakeVersion}`);
+  const ninja = requireFile((0, import_node_path6.join)(picoRoot, "ninja", `v${ninjaVersion}`, "ninja.exe"), `Ninja ${ninjaVersion}`);
+  const armBin = (0, import_node_path6.join)(picoRoot, "toolchain", armToolchainVersion, "bin");
+  const gcc = requireFile((0, import_node_path6.join)(armBin, "arm-none-eabi-gcc.exe"), `Arm GNU ${armToolchainVersion} GCC`);
+  const gxx = requireFile((0, import_node_path6.join)(armBin, "arm-none-eabi-g++.exe"), `Arm GNU ${armToolchainVersion} G++`);
   const gccVersion = await runProcess(execute, gcc, ["--version"], "Check Arm GCC version", 1e4);
   const gxxVersion = await runProcess(execute, gxx, ["--version"], "Check Arm G++ version", 1e4);
   if (!gccVersion.stdout.includes(armCompilerVersion) || !gxxVersion.stdout.includes(armCompilerVersion)) {
@@ -20283,17 +20498,20 @@ async function discoverToolchain(options, execute) {
   for (const [compiler, library] of libraries) {
     const result = await runProcess(execute, compiler, [`-print-file-name=${library}`], `Check Arm ${library}`, 1e4);
     const path = result.stdout.trim();
-    if (path === library || !(0, import_node_fs5.existsSync)(path)) throw new Error(`Arm library ${library} was not found in the selected toolchain.`);
+    if (path === library || !(0, import_node_fs6.existsSync)(path)) throw new Error(`Arm library ${library} was not found in the selected toolchain.`);
   }
   const cmakeResult = await runProcess(execute, cmake, ["--version"], "Check CMake version", 1e4);
   const ninjaResult = await runProcess(execute, ninja, ["--version"], "Check Ninja version", 1e4);
   if (!cmakeResult.stdout.includes(cmakeVersion)) throw new Error(`CMake ${cmakeVersion} is required; detected ${cmakeResult.stdout.trim()}.`);
   if (!ninjaResult.stdout.trim().startsWith(ninjaVersion)) throw new Error(`Ninja ${ninjaVersion} is required; detected ${ninjaResult.stdout.trim()}.`);
   const pythonResult = await runProcess(execute, "py.exe", ["-3.13", "-c", "import sys; print(sys.executable)"], "Locate Python 3.13", 1e4);
-  const python = (0, import_node_path5.resolve)(pythonResult.stdout.trim());
+  const python = (0, import_node_path6.resolve)(pythonResult.stdout.trim());
   requireFile(python, "Python 3.13");
   const pythonVersion = await runProcess(execute, python, ["--version"], "Check Python version", 1e4);
   if (!/^Python 3\.13\./.test(pythonVersion.stdout.trim())) throw new Error(`Python 3.13 is required for this qualified Windows build; detected ${pythonVersion.stdout.trim()}.`);
+  if (prebuilt !== void 0) return { root: picoRoot, cmake, ninja, python, armBin, prebuilt };
+  const vswhere = (0, import_node_path6.resolve)(options.vswhere ?? (0, import_node_path6.join)(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe"));
+  requireFile(vswhere, "Visual Studio instance locator");
   const vsResult = await runProcess(execute, vswhere, [
     "-latest",
     "-products",
@@ -20305,10 +20523,11 @@ async function discoverToolchain(options, execute) {
   ], "Locate Visual Studio C++ tools", 1e4);
   const installation = vsResult.stdout.trim();
   if (!installation) throw new Error("A Visual Studio C++ Build Tools installation is required for SDK host tools.");
-  const vsDevCmd = requireFile((0, import_node_path5.join)(installation, "Common7", "Tools", "VsDevCmd.bat"), "Visual Studio developer environment script");
+  const vsDevCmd = requireFile((0, import_node_path6.join)(installation, "Common7", "Tools", "VsDevCmd.bat"), "Visual Studio developer environment script");
   return { root: picoRoot, cmake, ninja, python, armBin, vsDevCmd, vswhere };
 }
 async function visualStudioEnvironment(execute, toolchain, profile) {
+  if (toolchain.vsDevCmd === void 0) throw new Error("A Visual Studio developer environment script is required to build SDK host tools.");
   const command = `call "${toolchain.vsDevCmd}" -no_logo -host_arch=x64 -arch=x64 >nul && set`;
   const output = await runProcess(execute, "cmd.exe", ["/d", "/c", command], "Prepare Visual Studio host compiler", 6e4, {
     env: { ...process.env, USERPROFILE: profile, HOME: profile }
@@ -20340,9 +20559,9 @@ function readCacheValue(cache, key) {
 async function runFirmwareBuild(options) {
   validateFirmwareBuildRequest(options);
   const execute = options.execute ?? executeProcess;
-  const workingDirectory = (0, import_node_path5.resolve)(options.workingDirectory ?? process.cwd());
+  const workingDirectory = (0, import_node_path6.resolve)(options.workingDirectory ?? process.cwd());
   const runId = (0, import_node_crypto2.randomUUID)();
-  const runDirectory = (0, import_node_fs5.mkdtempSync)((0, import_node_path5.join)((0, import_node_os2.tmpdir)(), "gpbuilder-build-"));
+  const runDirectory = (0, import_node_fs6.mkdtempSync)((0, import_node_path6.join)((0, import_node_os2.tmpdir)(), "gpbuilder-build-"));
   const diagnostics = [];
   let stage = "build initialization";
   const recordStage = async (name, work) => {
@@ -20363,18 +20582,30 @@ ${error2 instanceof Error ? error2.stack ?? error2.message : String(error2)}`);
     }
   };
   try {
-    const sourceDirectory = (0, import_node_path5.join)(runDirectory, "firmware");
-    await recordStage("materialize firmware tag and submodules", async () => {
+    const sourceDirectory = (0, import_node_path6.join)(runDirectory, "firmware");
+    const toolProfile = selectToolProfile(options.release);
+    let firmwareCommit = "";
+    let dirty = false;
+    await recordStage(`materialize firmware ${options.release} and submodules`, async () => {
       const source = await materializeFirmware({
         ...options.firmware !== void 0 && { source: options.firmware },
         release: options.release,
         destination: sourceDirectory,
         execute
       });
-      if (source.commit !== firmwareCommit) throw new Error(`Release ${firmwareRelease} resolved to unexpected commit ${source.commit}; expected ${firmwareCommit}.`);
-      return { stdout: `Firmware commit ${source.commit}`, stderr: "" };
+      if (toolProfile.firmwareCommit !== void 0 && source.commit !== toolProfile.firmwareCommit) {
+        throw new Error(`Release ${options.release} resolved to unexpected commit ${source.commit}; expected ${toolProfile.firmwareCommit}.`);
+      }
+      firmwareCommit = source.commit;
+      dirty = source.dirty;
+      if (options.release === "main") {
+        await runProcess(execute, "git", ["-C", sourceDirectory, "update-ref", "refs/heads/main", source.commit], "Record materialized main commit", 3e4);
+      }
+      if (options.configs !== void 0) applyConfigsOverlay(sourceDirectory, options.configs, "Pico");
+      checkMinimums(parseCmakeMinimums((0, import_node_fs6.readFileSync)((0, import_node_path6.join)(sourceDirectory, "CMakeLists.txt"), "utf8")), toolProfile);
+      return { stdout: `Firmware commit ${source.commit}${source.dirty ? " (dirty)" : ""}`, stderr: "" };
     });
-    const selection = selectBuild(sourceDirectory, options.release, options.board);
+    const selection = selectBuild(sourceDirectory, options.release, options.board, options.configs);
     options.log(`Release: ${selection.release}
 Firmware commit: ${selection.commit}
 Board: ${selection.board}
@@ -20382,82 +20613,91 @@ Config source: ${selection.configSource}
 Config path: ${selection.configPath}`);
     stage = "validate qualified toolchain";
     options.log(`Build stage: ${stage}`);
-    const toolchain = await discoverToolchain(options, execute);
-    const profile = (0, import_node_path5.join)(runDirectory, "host-profile");
-    (0, import_node_fs5.mkdirSync)(profile);
-    let preparedEnvironment;
-    await recordStage("prepare qualified Windows host tools", async () => {
-      preparedEnvironment = await visualStudioEnvironment(execute, toolchain, profile);
-      return { stdout: preparedEnvironment.VCToolsInstallDir ?? "", stderr: "" };
-    });
-    if (!preparedEnvironment) throw new Error("Visual Studio environment preparation returned no environment.");
-    const nativeEnvironment = preparedEnvironment;
-    const sdkDirectory = (0, import_node_path5.join)(runDirectory, "pico-sdk");
-    (0, import_node_fs5.mkdirSync)((0, import_node_path5.join)(runDirectory, "tools"));
-    await recordStage("materialize Pico SDK 2.1.1", async () => {
+    const toolchain = await discoverToolchain(options, execute, toolProfile.sdkTag);
+    const profile = (0, import_node_path6.join)(runDirectory, "host-profile");
+    (0, import_node_fs6.mkdirSync)(profile);
+    let nativeEnvironment;
+    if (toolchain.prebuilt !== void 0) {
+      const { pioasmVersion, pioasmDir, picotoolVersion, picotoolDir } = toolchain.prebuilt;
+      options.log(`Using prebuilt pioasm ${pioasmVersion} (${pioasmDir}) and picotool ${picotoolVersion} (${picotoolDir}); no host C++ compiler required.`);
+      nativeEnvironment = { ...process.env };
+    } else {
+      let preparedEnvironment;
+      await recordStage("prepare qualified Windows host tools", async () => {
+        preparedEnvironment = await visualStudioEnvironment(execute, toolchain, profile);
+        return { stdout: preparedEnvironment.VCToolsInstallDir ?? "", stderr: "" };
+      });
+      if (!preparedEnvironment) throw new Error("Visual Studio environment preparation returned no environment.");
+      nativeEnvironment = preparedEnvironment;
+    }
+    const sdkDirectory = (0, import_node_path6.join)(runDirectory, "pico-sdk");
+    (0, import_node_fs6.mkdirSync)((0, import_node_path6.join)(runDirectory, "tools"));
+    const { sdkTag } = toolProfile;
+    let sdkCommit = "";
+    await recordStage(`materialize Pico SDK ${sdkTag}`, async () => {
       await execute("git", ["clone", "--depth=1", "--branch", sdkTag, "https://github.com/raspberrypi/pico-sdk.git", sdkDirectory], {
         timeoutMs: 6e5,
-        stage: "Clone Pico SDK 2.1.1"
+        stage: `Clone Pico SDK ${sdkTag}`
       });
       const commit = await gitValue(execute, sdkDirectory, ["rev-parse", "HEAD"]);
-      if (commit !== sdkCommit) throw new Error(`Pico SDK ${sdkTag} resolved to unexpected commit ${commit}; expected ${sdkCommit}.`);
+      if (toolProfile.sdkCommit !== void 0 && commit !== toolProfile.sdkCommit) {
+        throw new Error(`Pico SDK ${sdkTag} resolved to unexpected commit ${commit}; expected ${toolProfile.sdkCommit}.`);
+      }
+      sdkCommit = commit;
       const submodules = await runProcess(execute, "git", ["-C", sdkDirectory, "submodule", "update", "--init", "--recursive"], "Initialize Pico SDK submodules", 6e5);
       return { stdout: `Pico SDK ${sdkTag} commit ${commit}
 ${submodules.stdout}`, stderr: submodules.stderr };
     });
-    const webDirectory = (0, import_node_path5.join)(sourceDirectory, "www");
-    const fsdata = (0, import_node_path5.join)(sourceDirectory, "lib", "httpd", "fsdata.c");
-    if ((0, import_node_fs5.existsSync)(fsdata)) (0, import_node_fs5.rmSync)(fsdata);
+    const webDirectory = (0, import_node_path6.join)(sourceDirectory, "www");
+    const fsdata = (0, import_node_path6.join)(sourceDirectory, "lib", "httpd", "fsdata.c");
+    if ((0, import_node_fs6.existsSync)(fsdata)) (0, import_node_fs6.rmSync)(fsdata);
     const npm = process.platform === "win32" ? "cmd.exe" : "npm";
     const npmArgs = (args) => process.platform === "win32" ? ["/d", "/s", "/c", `npm.cmd ${args.join(" ")}`] : args;
     await recordStage("install web dependencies", () => runProcess(execute, npm, npmArgs(["ci"]), "Install firmware web dependencies", 12e5, { cwd: webDirectory }));
     await recordStage("generate embedded web assets", async () => {
       const result = await runProcess(execute, npm, npmArgs(["run", "build"]), "Generate firmware web assets", 12e5, { cwd: webDirectory });
-      if (!(0, import_node_fs5.existsSync)(fsdata) || !(0, import_node_fs5.lstatSync)(fsdata).isFile() || (0, import_node_fs5.lstatSync)(fsdata).size === 0) {
+      if (!(0, import_node_fs6.existsSync)(fsdata) || !(0, import_node_fs6.lstatSync)(fsdata).isFile() || (0, import_node_fs6.lstatSync)(fsdata).size === 0) {
         throw new Error("The web build did not generate a nonempty lib/httpd/fsdata.c.");
       }
       return result;
     });
-    const constraint = (0, import_node_path5.join)(runDirectory, "pip-constraints.txt");
-    (0, import_node_fs5.writeFileSync)(constraint, "setuptools<81\n", { flag: "wx" });
+    const nanopbRequirements = (0, import_node_path6.join)(sourceDirectory, "lib", "nanopb", "extra", "requirements.txt");
+    const pipConstraint = nanopbPipConstraint((0, import_node_fs6.existsSync)(nanopbRequirements) ? (0, import_node_fs6.readFileSync)(nanopbRequirements, "utf8") : void 0);
     const environment = {
       ...nativeEnvironment,
       HOME: profile,
       USERPROFILE: profile,
       PICO_SDK_PATH: sdkDirectory,
-      PICO_TOOLCHAIN_PATH: (0, import_node_path5.join)(toolchain.root, "toolchain", armToolchainVersion),
-      PICO_PIO_USB_PATH: (0, import_node_path5.join)(sourceDirectory, "lib", "pico_pio_usb"),
+      PICO_TOOLCHAIN_PATH: (0, import_node_path6.join)(toolchain.root, "toolchain", armToolchainVersion),
+      PICO_PIO_USB_PATH: (0, import_node_path6.join)(sourceDirectory, "lib", "pico_pio_usb"),
       PICO_BOARD: "pico",
       PICO_PLATFORM: "rp2040",
       GP2040_BOARDCONFIG: "Pico",
       PICO_COMPILER: "pico_arm_cortex_m0plus_gcc",
       SKIP_SUBMODULES: "TRUE",
       SKIP_WEBBUILD: "TRUE",
-      PIP_CONSTRAINT: constraint,
-      PATH: `${toolchain.armBin};${(0, import_node_path5.dirname)(toolchain.cmake)};${(0, import_node_path5.dirname)(toolchain.ninja)};${nativeEnvironment.PATH ?? process.env.PATH ?? ""}`
+      PATH: `${toolchain.armBin};${(0, import_node_path6.dirname)(toolchain.cmake)};${(0, import_node_path6.dirname)(toolchain.ninja)};${nativeEnvironment.PATH ?? process.env.PATH ?? ""}`
     };
     for (const key of ["CC", "CXX", "CMAKE_TOOLCHAIN_FILE", "PICO_SDK_FETCH_FROM_GIT", "PICO_SDK_FETCH_FROM_GIT_TAG", "PICO_SDK_FETCH_FROM_GIT_PATH"]) {
       delete environment[key];
     }
-    const buildDirectory = (0, import_node_path5.join)(runDirectory, "build");
-    await recordStage("configure firmware", () => runProcess(execute, toolchain.cmake, [
-      "-S",
+    if (pipConstraint !== void 0) {
+      const constraint = (0, import_node_path6.join)(runDirectory, "pip-constraints.txt");
+      (0, import_node_fs6.writeFileSync)(constraint, pipConstraint, { flag: "wx" });
+      environment.PIP_CONSTRAINT = constraint;
+    } else {
+      delete environment.PIP_CONSTRAINT;
+    }
+    const buildDirectory = (0, import_node_path6.join)(runDirectory, "build");
+    await recordStage("configure firmware", () => runProcess(execute, toolchain.cmake, firmwareConfigureArgs({
       sourceDirectory,
-      "-B",
       buildDirectory,
-      "-G",
-      "Ninja",
-      `-DCMAKE_MAKE_PROGRAM=${toolchain.ninja}`,
-      "-DCMAKE_BUILD_TYPE=Release",
-      "-DGP2040_BOARDCONFIG=Pico",
-      "-DPICO_BOARD=pico",
-      "-DPICO_PLATFORM=rp2040",
-      `-DPICO_SDK_PATH=${sdkDirectory}`,
-      `-DPython3_EXECUTABLE=${toolchain.python}`,
-      "-DSKIP_SUBMODULES=TRUE",
-      "-DSKIP_WEBBUILD=TRUE",
-      `-DPICOTOOL_FETCH_FROM_GIT_PATH=${(0, import_node_path5.join)(runDirectory, "tools")}`
-    ], "Configure GP2040-CE Pico firmware", 18e5, { env: environment }));
+      ninja: toolchain.ninja,
+      sdkDirectory,
+      python: toolchain.python,
+      toolsDirectory: (0, import_node_path6.join)(runDirectory, "tools"),
+      prebuilt: toolchain.prebuilt
+    }), "Configure GP2040-CE Pico firmware", 18e5, { env: environment }));
     await recordStage("compile firmware and generate UF2", () => runProcess(execute, toolchain.cmake, [
       "--build",
       buildDirectory,
@@ -20466,10 +20706,10 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       "--target",
       "GP2040-CE"
     ], "Compile GP2040-CE and generate UF2", 36e5, { env: environment }));
-    const cachePath = (0, import_node_path5.join)(buildDirectory, "CMakeCache.txt");
+    const cachePath = (0, import_node_path6.join)(buildDirectory, "CMakeCache.txt");
     stage = "validate and publish UF2";
     options.log(`Build stage: ${stage}`);
-    const cache = (0, import_node_fs5.readFileSync)(cachePath, "utf8");
+    const cache = (0, import_node_fs6.readFileSync)(cachePath, "utf8");
     const expectedCache = /* @__PURE__ */ new Map([
       ["CMAKE_BUILD_TYPE", "Release"],
       ["GP2040_BOARDCONFIG", "Pico"],
@@ -20482,37 +20722,42 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       if (actual !== value) throw new Error(`CMake cache ${key} was ${actual ?? "missing"}, expected ${value}.`);
     }
     const version = await gitValue(execute, sourceDirectory, ["describe", "--tags", "--always", "--dirty", "--abbrev=7"]);
-    if (version !== firmwareRelease) throw new Error(`Materialized source reports ${version}, expected ${firmwareRelease}.`);
-    const artifactSource = (0, import_node_path5.join)(buildDirectory, "GP2040-CE_0.7.12_Pico.uf2");
-    const elf = requireFile((0, import_node_path5.join)(buildDirectory, "GP2040-CE_0.7.12_Pico.elf"), "Expected Pico ELF");
+    if (options.release === taggedRelease2 && version !== taggedRelease2) {
+      throw new Error(`Materialized source reports ${version}, expected ${taggedRelease2}.`);
+    }
+    const outputName = firmwareOutputName(version, "Pico");
+    const artifactSource = (0, import_node_path6.join)(buildDirectory, `${outputName}.uf2`);
+    const elf = requireFile((0, import_node_path6.join)(buildDirectory, `${outputName}.elf`), "Expected Pico ELF");
     requireFile(artifactSource, "Expected Pico UF2");
-    const elfBytes = (0, import_node_fs5.readFileSync)(elf);
-    if (!elfBytes.includes(Buffer.from("GP2040-CE_0.7.12_Pico")) || !elfBytes.includes(Buffer.from("v0.7.12"))) {
-      throw new Error("The built ELF does not identify the expected v0.7.12 Pico firmware target.");
+    const elfBytes = (0, import_node_fs6.readFileSync)(elf);
+    if (!elfBytes.includes(Buffer.from(outputName)) || !elfBytes.includes(Buffer.from(version))) {
+      throw new Error(`The built ELF does not identify the expected ${version} Pico firmware target.`);
     }
     const elfInfo = {
-      filename: "GP2040-CE_0.7.12_Pico.elf",
+      filename: `${outputName}.elf`,
       byteSize: elfBytes.length,
       sha256: (0, import_node_crypto2.createHash)("sha256").update(elfBytes).digest("hex")
     };
     const sourceSubmodules = await gitValue(execute, sourceDirectory, ["submodule", "status", "--recursive"]);
     const sdkSubmodules = await gitValue(execute, sdkDirectory, ["submodule", "status", "--recursive"]);
-    const arduinoJsonCommit = await gitValue(execute, (0, import_node_path5.join)(buildDirectory, "_deps", "arduinojson-src"), ["rev-parse", "HEAD"]);
-    const picotoolCommit = await gitValue(execute, (0, import_node_path5.join)(runDirectory, "tools", "picotool-src"), ["rev-parse", "HEAD"]);
-    const freeze = await runProcess(execute, (0, import_node_path5.join)(buildDirectory, "venv", "Scripts", "python.exe"), ["-m", "pip", "freeze"], "Record build-local Python dependencies", 3e4);
+    const arduinoJsonCommit = await gitValue(execute, (0, import_node_path6.join)(buildDirectory, "_deps", "arduinojson-src"), ["rev-parse", "HEAD"]);
+    const prebuilt = toolchain.prebuilt;
+    const hostToolDependencies = prebuilt !== void 0 ? { prebuiltTools: { pioasm: { version: prebuilt.pioasmVersion, dir: prebuilt.pioasmDir }, picotool: { version: prebuilt.picotoolVersion, dir: prebuilt.picotoolDir } } } : { picotoolCommit: await gitValue(execute, (0, import_node_path6.join)(runDirectory, "tools", "picotool-src"), ["rev-parse", "HEAD"]) };
+    const freeze = await runProcess(execute, (0, import_node_path6.join)(buildDirectory, "venv", "Scripts", "python.exe"), ["-m", "pip", "freeze"], "Record build-local Python dependencies", 3e4);
     const metadata = {
-      firmware: { repository: options.firmware ? (0, import_node_path5.resolve)(options.firmware) : "https://github.com/OpenStickCommunity/GP2040-CE.git", requestedRelease: firmwareRelease, commit: firmwareCommit, submodules: sourceSubmodules },
+      firmware: { repository: options.firmware ? (0, import_node_path6.resolve)(options.firmware) : "https://github.com/OpenStickCommunity/GP2040-CE.git", requestedRelease: options.release, commit: firmwareCommit, dirty, submodules: sourceSubmodules },
       sdk: { tag: sdkTag, commit: sdkCommit, submodules: sdkSubmodules },
-      dependencies: { arduinoJsonCommit, picotoolCommit, pythonPackages: freeze.stdout.trim().split(/\r?\n/) },
+      dependencies: { arduinoJsonCommit, ...hostToolDependencies, pythonPackages: freeze.stdout.trim().split(/\r?\n/) },
       tools: { node: process.version, cmake: cmakeVersion, ninja: ninjaVersion, armGcc: armCompilerVersion, python: "3.13", buildType: "Release" },
-      configuration: { board: "Pico", picoBoard: "pico", firmwareVersion: version, configSource: "firmware", elf: elfInfo },
+      configuration: { board: "Pico", picoBoard: "pico", firmwareVersion: version, upstreamFilename: `${outputName}.uf2`, configSource: selection.configSource, configPath: selection.configPath, elf: elfInfo },
       qualification: { platform: "Windows x64", hardwareSmokeTest: false }
     };
     const artifact = publishArtifact({
       source: artifactSource,
       workingDirectory,
       runId,
-      release: firmwareRelease,
+      release: options.release,
+      commit: firmwareCommit,
       board: "Pico",
       buildType: "release",
       metadata
@@ -20523,19 +20768,19 @@ SHA-256: ${artifact.sha256}
 Metadata: ${artifact.metadataPath}`);
     return { sourceCommit: firmwareCommit, selection, artifact };
   } catch (error2) {
-    const logDirectory = (0, import_node_path5.resolve)(workingDirectory, "artifacts", "logs", runId);
+    const logDirectory = (0, import_node_path6.resolve)(workingDirectory, "artifacts", "logs", runId);
     try {
-      (0, import_node_fs5.mkdirSync)(logDirectory, { recursive: true });
-      (0, import_node_fs5.writeFileSync)((0, import_node_path5.join)(logDirectory, "build.log"), `Stage: ${stage}
+      (0, import_node_fs6.mkdirSync)(logDirectory, { recursive: true });
+      (0, import_node_fs6.writeFileSync)((0, import_node_path6.join)(logDirectory, "build.log"), `Stage: ${stage}
 ${diagnostics.join("\n")}
 ${error2 instanceof Error ? error2.stack ?? error2.message : String(error2)}
 `, { flag: "wx" });
     } catch {
     }
-    const logPath = (0, import_node_path5.join)(logDirectory, "build.log");
+    const logPath = (0, import_node_path6.join)(logDirectory, "build.log");
     throw new Error(`Firmware build failed during ${stage}: ${error2 instanceof Error ? error2.message : String(error2)}. Diagnostics: ${logPath}`, { cause: error2 });
   } finally {
-    (0, import_node_fs5.rmSync)(runDirectory, { recursive: true, force: true });
+    (0, import_node_fs6.rmSync)(runDirectory, { recursive: true, force: true });
   }
 }
 function buildFirmware(options) {

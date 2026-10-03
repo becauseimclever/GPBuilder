@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
+import { findPicoPrebuiltTools } from './pico-prebuilt-tools.js';
 
 export interface CommandResult {
   status: number | null;
@@ -232,6 +233,15 @@ function detectHostCompiler(requirement: Requirement, execute: Execute, host: Ho
       const result = probe(command, 'Visual Studio');
       if (result) return result;
     }
+  }
+  const prebuilt = host.picoRoot ? findPicoPrebuiltTools(host.picoRoot) : undefined;
+  if (prebuilt) {
+    return {
+      name: requirement.name,
+      status: 'available',
+      detail: `[Pico extension] prebuilt pioasm ${prebuilt.pioasmVersion} and picotool ${prebuilt.picotoolVersion}; host compiler not required`,
+      guidance: requirement.guidance,
+    };
   }
   return failure;
 }
