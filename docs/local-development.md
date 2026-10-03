@@ -106,4 +106,4 @@ To upgrade, extract a newer release into a separate directory and run its CLI.
 | `esbuild` is not found | For a source checkout, run `npm ci` with development dependencies. For a release download, use `node dist/cli.cjs` instead of `npm start`. |
 | `dist/cli.cjs` cannot be found | Run from the project root. For source builds, run `npm run build`; for downloads, check that the selected release contains the bundle. |
 | A prerequisite check exits with code 1 | Read its report, install or expose the missing tools, and rerun. Local checks never install automatically. |
-| `--build` reports that firmware orchestration is not implemented | This is expected after the host-tool gate and release/board selection pass; firmware compilation has not been added yet. |
+| A firmware build rejects the target or host | The only implemented build profile is `v0.7.12`, board `Pico`, Release mode, on the qualified Windows x64 toolchain. Other profiles are not supported. |

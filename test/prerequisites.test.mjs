@@ -103,9 +103,9 @@ test('builds cannot bypass prerequisite checks in either mode', () => {
   }
 });
 
-test('a build with available tools still requires an explicit firmware selection', () => {
+test('a build with available tools still requires an explicit release and board', () => {
   const logs = [];
-  assert.throws(() => run({ mode: 'local', operation: 'build', host, log: (line) => logs.push(line), execute: available }), /firmware input is required/);
+  assert.throws(() => run({ mode: 'local', operation: 'build', host, log: (line) => logs.push(line), execute: available }), /release input is required/);
   assert.ok(logs.includes('12/12 prerequisites available.'));
 });
 

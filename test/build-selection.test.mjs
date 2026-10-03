@@ -13,7 +13,7 @@ const gitConfig = join(directory, 'gitconfig');
 writeFileSync(gitConfig, '');
 buildSync({ entryPoints: ['src/build-selection.ts', 'src/orchestrator.ts', 'src/cli.ts', 'src/action.ts'], outdir: directory, outExtension: { '.js': '.cjs' }, bundle: true, platform: 'node', format: 'cjs' });
 const selection = createRequire(import.meta.url)(join(directory, 'build-selection.cjs'));
-const { run } = createRequire(import.meta.url)(join(directory, 'orchestrator.cjs'));
+const { inferOperation, run } = createRequire(import.meta.url)(join(directory, 'orchestrator.cjs'));
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], {
@@ -166,22 +166,97 @@ test('external configs do not follow board-directory symlinks or accept header d
   }), /Unknown board/);
 });
 
-test('builds with valid selections pass the mandatory gate then fail explicitly as unimplemented', (context) => {
+test('an unqualified release is rejected before prerequisite probes and source setup', (context) => {
   const root = firmwareFixture(context);
   for (const mode of ['local', 'action']) {
     const logs = [];
+    let processCalls = 0;
+    let prerequisiteCalls = 0;
     assert.throws(() => run({
       mode, operation: 'build', firmware: root, release: 'v0.7.9', board: 'Pico',
       host: { platform: 'linux', ubuntu: true, githubActions: true },
       log: (line) => logs.push(line),
       execute: (command, args) => {
+        prerequisiteCalls++;
         assert.notEqual(command, 'sudo');
         const versions = { node: 'v24.0.0', npm: '11.0.0', cmake: 'cmake version 3.28.0', python3: 'Python 3.12.0', 'c++': 'g++ (GCC) 13.2.0' };
         const library = args[0]?.startsWith('-print-file-name=') ? `/toolchain/${args[0].split('=')[1]}` : undefined;
         return { status: 0, stdout: library ?? versions[command] ?? `${command} 1.0`, stderr: '' };
       },
-    }), /no firmware was built/);
-    assert.ok(logs.includes('12/12 prerequisites available.'));
-    assert.ok(logs.some((line) => line.includes('Board: Pico')));
+      process: async () => { processCalls++; throw new Error('Unsupported profile must not start processes'); },
+    }), /support only release v0\.7\.12/);
+    assert.equal(prerequisiteCalls, 0);
+    assert.equal(logs.length, 0);
+    assert.equal(processCalls, 0);
   }
+});
+
+test('a complete release and board pair implies a build unless an operation is explicit', () => {
+  assert.equal(inferOperation(undefined, { release: 'v0.7.12', board: 'Pico' }), 'build');
+  assert.equal(inferOperation(undefined, { release: 'v0.7.12' }), undefined);
+  assert.equal(inferOperation('select-build', { release: 'v0.7.12', board: 'Pico' }), 'select-build');
+});
+
+test('main resolves its local branch tip without following the current checkout', (context) => {
+  const root = firmwareFixture(context);
+  git(root, 'branch', 'stable');
+  git(root, 'branch', 'main');
+  git(root, 'checkout', '--quiet', 'main');
+  mkdirSync(join(root, 'configs', 'NightlyBoard'));
+  writeFileSync(join(root, 'configs', 'NightlyBoard', 'BoardConfig.h'), '#pragma once\n');
+  git(root, 'add', '.');
+  git(root, 'commit', '--quiet', '-m', 'main board');
+  const mainCommit = git(root, 'rev-parse', 'refs/heads/main');
+  git(root, 'checkout', '--quiet', 'stable');
+
+  assert.deepEqual(selection.listBoards(root, 'main'), ['NightlyBoard', 'Pico']);
+  assert.equal(selection.selectBuild(root, 'main', 'NightlyBoard').commit, mainCommit);
+  assert.notEqual(git(root, 'rev-parse', 'HEAD'), mainCommit);
+  assert.deepEqual(selection.listReleases(root), ['v0.7.10', 'v0.7.9']);
+});
+
+test('main fails when its local branch ref is missing instead of using HEAD', (context) => {
+  const root = firmwareFixture(context);
+  git(root, 'branch', 'stable');
+  git(root, 'branch', 'main');
+  git(root, 'checkout', '--quiet', 'stable');
+  git(root, 'branch', '-D', 'main');
+  assert.throws(() => selection.listBoards(root, 'main'), /local refs\/heads\/main/i);
+});
+
+test('CLI and Action select the same local main commit', (context) => {
+  const root = firmwareFixture(context);
+  git(root, 'branch', 'main');
+  git(root, 'checkout', '--quiet', 'main');
+  const commit = git(root, 'rev-parse', 'HEAD');
+  const cli = spawnSync(process.execPath, [join(directory, 'cli.cjs'), '--select-build', '--firmware', root, '--release', 'main', '--board', 'Pico'], { encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /Release: main/);
+  assert.ok(cli.stdout.includes(`Firmware commit: ${commit}`));
+
+  const output = join(root, 'main-action-output');
+  writeFileSync(output, '');
+  const action = spawnSync(process.execPath, [join(directory, 'action.cjs')], {
+    encoding: 'utf8', env: {
+      ...process.env, GITHUB_OUTPUT: output, GITHUB_ACTIONS: 'false',
+      INPUT_COMMAND: 'select-build', INPUT_FIRMWARE: root, INPUT_RELEASE: 'main', INPUT_BOARD: 'Pico',
+    },
+  });
+  assert.equal(action.status, 0, action.stderr + action.stdout);
+  const outputs = readFileSync(output, 'utf8');
+  assert.match(outputs, /release<<[^\r\n]+\r?\nmain\r?\n/);
+  assert.ok(outputs.includes(commit));
+});
+
+test('an unsupported Action build profile fails before prerequisite repair', () => {
+  const calls = [];
+  assert.throws(() => run({
+    mode: 'action', operation: 'build', release: 'v0.7.12', board: 'Pico',
+    host: { platform: 'linux', ubuntu: true, githubActions: true }, log: () => {},
+    execute: (command) => {
+      calls.push(command);
+      return { status: null, stdout: '', stderr: '', missing: true };
+    },
+  }), /only been integration-qualified on Windows x64/);
+  assert.deepEqual(calls, []);
 });

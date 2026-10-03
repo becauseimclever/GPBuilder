@@ -232,10 +232,12 @@ After the gate, builds require a valid release/board selection; see
 [Selecting a Release and Board](build-selection.md) for inputs and external configs.
 Listing and selection-only operations do not run the build-tool prerequisite gate.
 
-**Firmware compilation is not implemented yet.** If host prerequisites and selection
-pass, `--build` / `command: build` still fails explicitly with a not-implemented message.
-It never reports a successful build or produces firmware. Running the CLI without
-arguments, or with `--help`, prints usage without probing or installing tools.
+The build path currently supports only `v0.7.12`, board `Pico`, Release mode, and
+the qualified Windows x64 profile in [Building a Flashable Pico UF2](firmware-build.md).
+It resolves target-specific SDK/compiler/Python requirements after the generic
+bootstrap report. Other targets and host profiles fail rather than inheriting the
+standalone host report's broad version checks. Running the CLI without arguments,
+or with `--help`, prints usage without probing or installing tools.
 
 `npm run build` is different: it bundles GPBuilder's TypeScript, not firmware,
 and does not require firmware tools.
@@ -254,15 +256,16 @@ certify an Arm compiler version, or test network access. Every report explicitly
 states this limit. SDK/source preparation and target validation must be added to
 the build path before firmware compilation can be implemented.
 
-That SDK minimum applies to the newer baseline revision above. The planned
-[Pico v0.7.12 build](firmware-build.md) instead has an upstream SDK minimum of
-2.1.1 and its own dependency qualification requirements. A passing host-tool
-report alone does not verify either firmware release can compile.
+That SDK minimum applies to the newer baseline revision above. The supported
+[Pico v0.7.12 build](firmware-build.md) instead uses SDK 2.1.1 and a separately
+qualified Windows dependency/tool profile. A passing generic host-tool report
+alone does not verify another firmware release can compile.
 
 ## Planned Revision-Aware Checks
 
-The future build path accepts exact release tags and explicit `main`. It must not
-apply one SDK/tool profile to every firmware target. Follow the
+The supported build path currently pins `v0.7.12` to SDK 2.1.1 and the Windows
+tool profile in the firmware guide. Additional release tags and explicit `main`
+remain future targets; they must not reuse a global SDK profile. Follow the
 [revision-specific validation order](firmware-build.md#validation-and-setup-order):
 bootstrap the runtime/Git needed to resolve the source, inspect the resolved
 firmware commit, then validate the full toolchain against its referenced versions
@@ -279,7 +282,7 @@ guidance rather than installing an arbitrary distro version and claiming readine
 For example, `v0.7.12` references SDK 2.1.1, while the newer inspected source
 snapshot references 2.3.1. Main must use whatever its resolved commit references,
 not a permanently hard-coded "latest" SDK. Existing `--check-prerequisites` output
-remains a generic host report; these target-aware checks are planned, not implemented.
+remains a generic host report and does not certify an unspecified target.
 
 ## Acceptance and Verification
 

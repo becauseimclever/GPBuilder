@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
-import { operations, run } from './orchestrator.js';
+import { inferOperation, operations, run } from './orchestrator.js';
 
+async function main(): Promise<void> {
 try {
   const { values } = parseArgs({
     options: {
@@ -21,7 +22,7 @@ try {
   if (selected.length > 1) {
     throw new Error('Choose one operation. Builds always check prerequisites.');
   }
-  const operation = selected[0];
+  const operation = inferOperation(selected[0], values);
   if (!values.help && operation === undefined && [values.firmware, values.release, values.board, values.configs].some((value) => value !== undefined)) {
     throw new Error('Choose an operation, such as --select-build or --list-boards.');
   }
@@ -32,17 +33,18 @@ Usage: node dist/cli.cjs <operation> [options]
 
 --check-prerequisites  Report host tools without installing anything.
 --list-releases        List local release tags; requires --firmware.
---list-boards          List boards; requires --firmware and --release.
+--list-boards          List boards; --release accepts a local tag or main.
 --select-build         Validate --firmware, --release, and --board without building.
 --build                Check prerequisites and selection; compilation is not implemented.
+                       A complete --release and --board pair also implies --build.
 --help                Show this help.
 
 --firmware <path>      Local GP2040-CE Git checkout.
---release <tag>        Exact local release tag (for example v0.7.10).
+--release <tag|main>   Exact local release tag or local refs/heads/main.
 --board <name>         Exact, case-sensitive board directory name.
 --configs <path>       External directory containing board folders; replaces built-in configs.`);
   } else {
-    run({
+    await run({
       mode: 'local', log: console.log,
       operation,
       ...(values.firmware !== undefined && { firmware: values.firmware }),
@@ -55,3 +57,6 @@ Usage: node dist/cli.cjs <operation> [options]
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }
+}
+
+void main();

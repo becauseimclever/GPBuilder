@@ -1,46 +1,51 @@
 # Building a Flashable Pico UF2
 
-**Status: planned, not implemented or build-verified.** This guide defines the
-first end-to-end build: GP2040-CE **0.7.12** for the original Raspberry Pi **Pico**
-(RP2040), using upstream tag `v0.7.12` and its built-in `Pico` configuration.
-It is not a Pico W, Pico 2, or generic RP2040-board recipe.
+**Status: implemented and integration-built on Windows x64.** The supported build
+is GP2040-CE **0.7.12** for the original Raspberry Pi **Pico** (RP2040), using
+upstream tag `v0.7.12` and its built-in `Pico` configuration. This is not a Pico W,
+Pico 2, or generic RP2040-board recipe. Other host profiles, targets, boards,
+build types, and external configs are not supported or qualified.
 
-The planned target selector also accepts `main` for development/nightly builds.
-The released Pico example remains the initial qualification case; a successful
-release build does not establish that a later main commit builds or runs correctly.
+Local selection accepts `main` for development/nightly builds. Building main,
+including upstream resolution and revision-specific setup, remains planned. The
+released Pico example is the initial qualification case; a successful release
+build does not establish that a later main commit builds or runs correctly.
 
 ## User Contract
 
-The target local workflow supplies only the firmware release and board:
+From the GPBuilder repository root on the qualified Windows x64 host, supply only
+the firmware release and board:
 
 ```sh
 node dist/cli.cjs --release v0.7.12 --board Pico
 node dist/cli.cjs -r v0.7.12 -b Pico
 ```
 
-These are equivalent planned commands. No `--build`, source path, SDK path, config
+These are equivalent supported commands. No `--build`, source path, SDK path, config
 path, or matrix is required. With a complete release/board pair and no explicit
 operation or matrix, the CLI defaults to `build`. An explicit `--select-build`
 remains validation-only; an explicit `--build` remains supported. No arguments
-still show help. An incomplete pair fails with guidance, not a guessed board or
+still shows help. An incomplete pair fails with guidance, not a guessed board or
 release. Help/version and matrix precedence remain as defined in the
 [CLI contract](build-selection.md#planned-cli-contract).
 
 The release flag is the firmware version, not GPBuilder's `--version` flag.
 Use the exact tag `v0.7.12`; accepting a bare `0.7.12` alias is not part of this
-contract. Alternatively, explicitly select `main` as described below. The examples
-will not produce firmware with today's bundle.
+contract. Local `main` selection is supported for discovery only; building main
+is not supported.
 
 Defaults are the upstream GP2040-CE repository, `configs/Pico` from that exact
-commit, and build type `release` (CMake `Release`). The caller must have the
-required host tools installed and network access for source/dependency retrieval.
-Two flags mean automatic orchestration on a prepared host, not automatic local
-installation of compilers or other host software.
+commit, and build type `release` (CMake `Release`). A local firmware path may be
+supplied to select its exact tag; GPBuilder materializes a clean copy and does not
+modify that checkout. The caller needs network access for source and dependency
+retrieval. GPBuilder does not install host software. Its qualified Windows tool
+profile is checked before dependency setup; other host profiles are unsupported.
 
 A successful run prints an absolute path to a newly built, validated
 `GP2040-CE_0.7.12_Pico.uf2`, its byte size, and SHA-256 digest, then exits 0.
-No flash drive or connected Pico is required to build. The orchestrator must not
-automatically flash hardware, erase configuration, or copy files to a device.
+No flash drive or connected Pico is required to build. The produced image has not
+been physically tested on a Pico. GPBuilder never flashes hardware, erases
+configuration, or copies files to a device.
 
 ## Main and Revision-Specific Requirements
 
@@ -49,8 +54,8 @@ node dist/cli.cjs --release main --board Pico
 node dist/cli.cjs -r main -b Pico
 ```
 
-`--release` is the firmware target selector: an exact release tag or the literal
-`main`. No implicit latest target, arbitrary branch, raw commit expression,
+`--release` is the firmware target selector: this build currently accepts only
+the exact release tag `v0.7.12`. No implicit latest target, arbitrary branch, raw commit expression,
 `latest`, or `nightly` alias is introduced. "Nightly" describes building main; it
 does not add a scheduled workflow or download a prebuilt nightly artifact.
 
@@ -167,18 +172,29 @@ The [host prerequisite guide](prerequisites.md) was initially reviewed against a
 newer firmware revision requiring SDK 2.3.1. That is not the SDK minimum for
 `v0.7.12`. A generic 12/12 host report does not establish release compatibility.
 
-Use SDK 2.1.1 and Arm GNU 14_2_Rel1 as the initial qualification baseline from the
-release's version hints, not as evidence of a successful test. Confirm the SDK's
-host-tool requirements, including UF2 generation/picotool, during integration.
-Newer installed SDK/compiler versions must be explicitly qualified before being
-claimed supported; do not silently select the newest installation or downgrade
-the user's tools. Detect and report incompatible or missing versions.
+The release's version hints are SDK 2.1.1 and Arm GNU 14_2_Rel1. GPBuilder has
+completed an end-to-end Windows x64 build using SDK 2.1.1 commit
+`bddd20f928ce76142793bef434d4f75f4af6e433`, Arm GNU 15.2.1 (`15_2_Rel1`), CMake
+4.3.4, Ninja 1.13.2, Python 3.13.15, and build-local setuptools 80.10.2. The
+published `GP2040-CE_0.7.12_Pico.uf2` is 2,402,304 bytes with SHA-256
+`b8be8f1ff12a7bfbd215b1fbbc2ec9cc83bacfb1745e6b2502ce60c459bd4aaf`; its 4,692
+RP2040-family blocks passed the implemented UF2 validation. Source commit was
+`0014e4ae2a312332e2582f6708dcc7d6bec5de8c`. The physical Pico smoke test has not
+been performed, so hardware behavior is not qualified. This build profile is
+qualified only on the observed Windows host. A separate attempt with SDK 2.3.1
+failed because its Mbed TLS API is incompatible with this release's PS4
+authentication code; do not substitute it for SDK 2.1.1. Detect and report other
+missing or unqualified versions rather than silently selecting them.
 
-GPBuilder runs on Node.js 24. Verify the tagged web build on Node 24 first: upstream
-testing on Node 20 does not prove Node 24 compatibility. If it fails, preserve the
-error and resolve a documented compatibility approach before implementation
-continues. Do not silently switch GPBuilder to an unsupported runtime or rewrite
-the firmware lockfile to make dependency installation pass.
+For this Windows recipe, use Python 3.13: it has a compatible binary wheel for
+the pinned `grpcio-tools==1.71.0`. Python 3.14 attempted to build that package
+from source and failed with incompatible MSVC C/C++ standard flags. Other Python
+versions and operating systems still require separate build qualification.
+
+GPBuilder runs on Node.js 24. The tagged v0.7.12 web `npm ci` and build have been
+verified on Node 24. Upstream testing on Node 20 alone would not prove that
+compatibility. Do not silently switch GPBuilder to an unsupported runtime or
+rewrite the firmware lockfile to make dependency installation pass.
 
 ## Required Orchestration
 
@@ -233,9 +249,19 @@ execution effects must be clear in user-facing help/build documentation.
 Preserve the firmware npm lockfile and use `npm ci`, not an unconstrained install.
 Respect the selected nanopb requirements and retain their resolved versions in
 the report; do not claim fully locked Python dependencies if upstream does not
-pin them. Root CMake also fetches ArduinoJson at `v6.21.2`; resolve/record the
-fetched revision. SDK host-tool downloads are dependencies too, not an assumed
-side effect that can be omitted from diagnostics or provenance.
+pin them. In the inspected v0.7.12 nanopb generator, `proto/__init__.py` imports
+`pkg_resources`, but its requirements do not constrain setuptools. Setuptools 81+
+deprecates/removes that compatibility API; pass a build-owned pip constraints file
+containing `setuptools<81` through `PIP_CONSTRAINT` while the upstream requirements
+are installed into the build-local venv. Do not change the upstream requirements
+file or install this constraint globally. Record the resolved setuptools version
+with the other venv packages. Remove this compatibility constraint only when the
+selected nanopb generator no longer requires `pkg_resources` or declares a
+compatible setuptools range itself.
+
+Root CMake also fetches ArduinoJson at `v6.21.2`; resolve/record the fetched
+revision. SDK host-tool downloads are dependencies too, not an assumed side effect
+that can be omitted from diagnostics or provenance.
 
 ### 4. Generate Embedded Web Assets
 

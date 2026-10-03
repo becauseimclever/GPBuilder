@@ -1,16 +1,16 @@
 name: GPBuilder
-description: Select GP2040-CE releases and boards, and check host prerequisites. Firmware builds are not implemented yet.
+description: Select GP2040-CE releases and boards, check host prerequisites, and build the qualified v0.7.12 Pico UF2 on pre-provisioned Windows x64 hosts.
 author: becauseimclever
 inputs:
   command:
-    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (compilation is not implemented)."
+    description: "Operation: check-prerequisites, list-releases, list-boards, select-build, or build (v0.7.12 Pico Release on Windows x64)."
     required: false
     default: check-prerequisites
   firmware:
-    description: Local firmware Git checkout root. Required for release/board operations and build.
+    description: Local firmware Git checkout root. Required for listing/selection; optional for the supported build, which defaults to upstream.
     required: false
   release:
-    description: Exact local firmware release tag. Required for list-boards, select-build, and build.
+    description: Exact local release tag or local main branch. Required for list-boards, select-build, and build.
     required: false
   board:
     description: Case-sensitive board directory name. Required for select-build and build.
@@ -24,7 +24,7 @@ outputs:
   boards:
     description: JSON array of board names from list-boards.
   release:
-    description: Exact release tag validated by select-build.
+    description: Release tag or main target validated by select-build.
   firmware-commit:
     description: Firmware commit resolved by select-build.
   board:
@@ -33,6 +33,12 @@ outputs:
     description: "Config source selected by select-build: firmware or external."
   config-path:
     description: Board path inside the selected Git tree for firmware configs, or an absolute local board directory for external configs.
+  uf2-path:
+    description: Absolute path to the successfully built and validated UF2.
+  uf2-sha256:
+    description: SHA-256 digest of the validated UF2.
+  build-metadata-path:
+    description: Absolute path to build.json for a successful firmware build.
 branding:
   icon: cpu
   color: green

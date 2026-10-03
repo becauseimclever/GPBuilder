@@ -1,6 +1,6 @@
 # Overall Architecture
 
-Status: prerequisite checking and offline build selection implemented; compilation is proposed.
+Status: prerequisite checking, offline selection, and the Windows v0.7.12 Pico Release build are implemented; broader profiles are pending.
 
 ## Purpose and Scope
 
@@ -9,12 +9,12 @@ the same build capabilities through a local CLI and a reusable GitHub Action.
 It coordinates firmware tooling rather than replacing the firmware project's
 build system or owning firmware source code.
 
-The current implementation selects local release tags and board configs and
-checks host prerequisites. Selection is read-only in both adapters; the Action
-can repair missing tools on Ubuntu runners for prerequisite/build operations.
-Both build entry points require the shared prerequisite gate and valid selection,
-then fail explicitly because firmware compilation is not implemented. Firmware checkout, SDK preparation,
-compilation, and artifact collection remain future work.
+The current implementation selects local release tags or the local `main` branch,
+validates board configs, and checks host prerequisites. The CLI can build upstream
+or locally sourced `v0.7.12` Pico Release firmware on the qualified Windows x64
+profile, then validate and publish its UF2. Other operating systems/targets and
+physical hardware behavior are not qualified. The Action's Ubuntu repair applies
+to prerequisite checks; firmware builds require the same supported profile.
 
 ## Architectural Principles
 
@@ -34,7 +34,7 @@ flowchart TD
     Workflow[Consumer workflow] --> Action[GitHub Action adapter]
     CLI --> Core[Shared orchestration entry point]
     Action --> Core
-    Core --> Selection[Read local release tags and built-in or external boards]
+    Core --> Selection[Read local release tags or main and built-in or external boards]
     Selection --> Selected[Validated selection: commit, board, config source and path]
     Core --> Prerequisites[Shared host-tool checks and console report]
     Prerequisites --> LocalReport[Local: report only]
@@ -43,12 +43,12 @@ flowchart TD
 
 | Component | Location | Current responsibility |
 | --- | --- | --- |
-| Shared core | [src/orchestrator.ts](../src/orchestrator.ts) | Routes listing/selection; requires prerequisites for checks and builds; rejects unfinished build execution |
-| Build selection | [src/build-selection.ts](../src/build-selection.ts) | Resolves local tags to commits and validates built-in/external board configs without modifying checkouts |
+| Shared core | [src/orchestrator.ts](../src/orchestrator.ts) | Routes selection and the supported async firmware build; requires the prerequisite gate |
+| Build selection | [src/build-selection.ts](../src/build-selection.ts) | Resolves local tags or `refs/heads/main` to commits and validates built-in/external board configs without modifying checkouts |
 | Prerequisites | [src/prerequisites.ts](../src/prerequisites.ts) | Detects tools, reports status, and applies the Ubuntu Action repair policy |
 | CLI adapter | [src/cli.ts](../src/cli.ts) | Supplies console logging and maps failures to a nonzero exit code |
 | Action adapter | [src/action.ts](../src/action.ts) | Supplies Actions logging and reports failures with `core.setFailed` |
-| Action metadata | [action.yml](../action.yml) | Declares Node.js 24, operation/selection inputs, and discovery/selection outputs |
+| Action metadata | [action.yml](../action.yml) | Declares Node.js 24, operation/build inputs, and discovery/build outputs |
 | Build and checks | [package.json](../package.json) | Defines npm scripts and dependencies |
 | Smoke tests | [test/smoke.test.mjs](../test/smoke.test.mjs) | Executes standalone copies of both bundles from temporary directories |
 | CI | [.github/workflows/ci.yml](../.github/workflows/ci.yml) | Tests on Linux, Windows, and macOS; verifies bundles; invokes the real Action on Linux |

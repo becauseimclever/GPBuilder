@@ -3,10 +3,12 @@
 Build orchestrator for GP2040-CE, designed to run locally and as a reusable
 GitHub Action.
 
-GPBuilder selects local GP2040-CE release tags and boards, supports external board
-config directories, and reports installed and missing host build tools. It can
-install missing packages on Ubuntu GitHub Actions runners. Firmware fetching,
-SDK setup, compilation, and artifact handling are not implemented yet.
+GPBuilder selects local GP2040-CE release tags or the local `main` branch and
+boards, supports external board config directories, and reports installed and
+missing host build tools. It can install missing packages on Ubuntu GitHub Actions
+runners. A complete UF2 build is implemented for GP2040-CE `v0.7.12`, the original
+Pico, Release mode, and the qualified Windows x64 tool profile. Other targets and
+host profiles are not yet supported.
 
 ## Architecture and Development
 
@@ -24,15 +26,15 @@ The [matrix schema](docs/matrix.md) supports YAML and JSON with shared defaults,
 a board list, and per-board config-location overrides. Matrix execution policy
 is still pending; no matrix support is implemented yet.
 
-[Building a Flashable Pico UF2](docs/firmware-build.md) defines the first end-to-end
-goal: `--release v0.7.12 --board Pico` produces a validated UF2 using default
-upstream source/configs. The guide covers dependencies, build stages, artifact
-validation, and qualification tests. This workflow is not implemented yet.
+[Building a Flashable Pico UF2](docs/firmware-build.md) documents the implemented
+workflow: `--release v0.7.12 --board Pico` produces a validated UF2 using default
+upstream source/configs on the qualified Windows x64 profile. Hardware behavior is
+not qualified; the build does not flash a device.
 
-The planned target `--release main --board Pico` builds a pinned main commit for
-development/nightly use. SDK and tool checks/setup follow that commit's referenced
-versions, so older releases retain their own requirements. Main support is also
-documentation-only for now.
+Local `main` selection is implemented for listing and validating boards. Building
+a pinned main commit for development/nightly use remains planned; its SDK and tool
+checks/setup will follow that commit's referenced versions, while older releases
+retain their own requirements.
 
 ## Local Development
 
@@ -50,8 +52,8 @@ For an existing checkout, skip cloning and run the npm commands from its root.
 ESLint with type-aware rules, esbuild, and the Node.js test runner.
 
 Run `npm start -- --check-prerequisites` for a read-only tool report. With no
-arguments the CLI shows help. `--build` always checks prerequisites, but currently
-fails explicitly because firmware compilation is not implemented.
+arguments the CLI shows help. A complete `--release v0.7.12 --board Pico` pair
+starts the qualified build; unsupported target/profile combinations fail.
 
 With a local firmware Git checkout, choose a release and board without building:
 
@@ -61,7 +63,9 @@ npm start -- --list-boards --firmware ../GP2040-CE --release v0.7.12
 npm start -- --select-build --firmware ../GP2040-CE --release v0.7.12 --board Pico
 ```
 
-Use an exact local tag from the first command. Add `--configs <directory>` to
+Use an exact local tag from the first command or select `main` explicitly. Main
+means the local `refs/heads/main` branch; it does not use the current checkout or
+fetch from upstream. Add `--configs <directory>` to
 list/select boards from a separate local config directory or checked-out repo.
 See the [selection guide](docs/build-selection.md) for the layout and Action inputs/outputs.
 

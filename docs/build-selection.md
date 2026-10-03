@@ -1,15 +1,17 @@
 # Selecting a Release and Board
 
 **Status:** The sections through "Acceptance and Verification" describe current
-behavior. [Planned CLI Contract](#planned-cli-contract) documents future flags and
-source defaults; those changes are not implemented. The [matrix schema](matrix.md)
+behavior, including local selection from an exact release tag or the literal
+`main` branch. [Planned CLI Contract](#planned-cli-contract) documents future flags,
+upstream source defaults, and builds; those changes are not implemented. The [matrix schema](matrix.md)
 defines YAML/JSON inputs; matrix execution decisions remain pending.
 
 The [Pico UF2 build guide](firmware-build.md) specifies the planned two-flag
 `v0.7.12`/`Pico` workflow, required build stages, and artifact acceptance checks.
 
 GPBuilder can list local firmware release tags, list boards, and validate a build
-selection through the CLI or GitHub Action. This slice is offline and read-only:
+selection from a local release tag or `main` branch through the CLI or GitHub Action.
+This slice is offline and read-only:
 it does not fetch repositories, change your checkout, run config code, install
 tools, or compile firmware. Selection needs Node.js 24 and Git on PATH, but not
 the firmware compiler toolchain.
@@ -23,6 +25,7 @@ of an existing firmware Git checkout with local release tags:
 node dist/cli.cjs --list-releases --firmware ../GP2040-CE
 node dist/cli.cjs --list-boards --firmware ../GP2040-CE --release v0.7.12
 node dist/cli.cjs --select-build --firmware ../GP2040-CE --release v0.7.12 --board Pico
+node dist/cli.cjs --select-build --firmware ../GP2040-CE --release main --board Pico
 ```
 
 Choose an exact tag from the first command, then an exact board name from the
@@ -30,7 +33,7 @@ second. The version above is an example, not a default. From source, you can
 replace `node dist/cli.cjs` with `npm start --` to rebuild before running.
 There are no interactive prompts or implicit latest-release selections.
 
-Successful selection prints the release tag, resolved commit, board, config
+Successful selection prints the requested target, resolved commit, board, config
 source, and config path, followed by `Selection validated; no firmware was built.`
 It exits with code 0. Invalid inputs or failed Git/filesystem operations exit with
 code 1. Listing commands print one value per line; an empty list succeeds with no
@@ -47,13 +50,17 @@ a selection. With no arguments, the CLI still shows help.
   followed by a hyphen and a prerelease suffix of letters, digits, dots, or hyphens.
   It sorts names in descending numeric-aware order, not semantic-version order.
   It does not verify that a tag has a published GitHub release.
-- Selection requires an exact tag, including its `v` prefix if present. Branches,
-  commit hashes, `latest`, and revision expressions are not release inputs.
-  Annotated and lightweight tags are supported and resolved to a commit.
+- Selection accepts an exact tag, including its `v` prefix if present, or the
+  literal `main`. Main resolves only `refs/heads/main` in the supplied checkout;
+  it never falls back to HEAD, the checked-out branch, or a remote-tracking ref.
+  Annotated and lightweight tags are supported and resolved to a commit. Other
+  branches, commit hashes, `latest`, and revision expressions are invalid.
 - The selected commit must contain a regular root `CMakeLists.txt`. This is a
   structural check, not certification that an arbitrary repository is GP2040-CE.
-- Missing tags fail with guidance. If necessary, fetch the desired tag yourself
-  before running GPBuilder. No command here performs a network fetch or checkout.
+- Missing tags or a missing local main branch fail with guidance. If necessary,
+  fetch/create the desired ref yourself before running GPBuilder. No command here
+  performs a network fetch or checkout. `--list-releases` lists tags only; main
+  is an explicit selection target, not a release tag.
 - Built-in boards are read from the selected commit's Git tree. Your current
   branch, uncommitted edits, and untracked config folders do not change that list.
   Existing working-tree files are neither replaced nor used as that release's files.
@@ -210,8 +217,8 @@ changed defaults in this section are still planned.
 | `-l` | `--list-releases` | None | List release tags from the selected firmware source | Existing long flag; currently local-only |
 | `-L` | `--list-boards` | None | List boards for a specified firmware release and config source | Existing long flag |
 | `-s` | `--select-build` | None | Resolve and validate a selection without compiling | Existing long flag |
-| `-B` | `--build` | None | Request a firmware build; default operation for a complete release/board pair without another operation or matrix | Existing long flag; implicit builds and compilation not implemented |
-| `-r` | `--release` | Exact tag or `main` | Firmware target; tags retain their `v` prefix, and main resolves to one commit per invocation; no implicit latest | Existing long flag; main support planned |
+| `-B` | `--build` | None | Request a firmware build; default operation for a complete release/board pair without another operation or matrix | Existing long flag; compilation not implemented |
+| `-r` | `--release` | Exact tag or `main` | Firmware target; tags retain their `v` prefix, and main resolves to one commit per invocation; no implicit latest | Existing long flag; local main selection implemented |
 | `-b` | `--board` | Name | Exact, case-sensitive board folder name; no default board | Existing long flag |
 | `-c` | `--configs` | Directory | Optional directory containing board folders; defaults to `configs/` in the selected firmware revision | Existing long flag |
 | `-f` | `--firmware` | Directory | Optional local firmware Git checkout root; if omitted, use the upstream repository below | Existing long flag; currently required for selection |
@@ -222,8 +229,8 @@ The firmware version is always `-r/--release`; `-v/--version` never selects
 firmware. A GPBuilder version such as `0.1.0`, a firmware tag such as `v0.7.12`,
 and the build type `release` are three independent values.
 
-The literal `main` is also a planned firmware target for development/nightly
-builds. It is not a build type or an alias for the newest release tag.
+The literal `main` is a supported local selection target and a planned build target
+for development/nightly builds. It is not a build type or an alias for the newest release tag.
 `--list-releases` remains a tag listing; `main` is selected explicitly rather than
 represented as a release tag. No `latest` or `nightly` input alias is introduced.
 
@@ -349,7 +356,8 @@ The following applies when no matrix file is supplied:
 Release targets retain exact tag spelling. The only supported branch target is
 the literal `main`; other branches and commit expressions remain invalid. A local
 checkout resolves main from `refs/heads/main`, never its current HEAD or a remote
-tracking ref. Board names remain case-sensitive and cannot contain traversal.
+tracking ref. Without `--firmware`, upstream resolution is planned but not yet
+implemented. Board names remain case-sensitive and cannot contain traversal.
 Selection must report the requested target, resolved firmware commit, board,
 config source, and effective build type.
 Selecting or listing does not establish that a board can compile successfully.
@@ -367,7 +375,8 @@ means this firmware repository, not the GPBuilder orchestrator repository.
   invocation. Do not substitute the default branch, HEAD, or another target if
   resolution fails.
 - With `--firmware`, use the supplied local Git checkout and its local tags or
-  local `refs/heads/main`, according to the requested target.
+  local `refs/heads/main`, according to the requested target. This behavior is
+  implemented for listing/selection; source materialization for builds is planned.
   Preserve the current offline behavior: do not fetch into it, switch its branch,
   overwrite files, or silently fall back to upstream. ZIP source directories and
   arbitrary repository URLs are not accepted by this directory option.

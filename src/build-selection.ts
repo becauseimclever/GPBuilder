@@ -35,15 +35,26 @@ export function listReleases(firmware: string): string[] {
     .sort((left, right) => right.localeCompare(left, 'en', { numeric: true }));
 }
 
-function releaseCommit(firmware: string, release: string): string {
-  if (!releasePattern.test(release)) throw new Error('Select an exact release tag such as v0.7.10.');
-  if (!listReleases(firmware).includes(release)) {
-    throw new Error(`Release ${release} is not available locally. Fetch the desired tag into the firmware checkout first.`);
+function targetCommit(firmware: string, target: string): string {
+  let ref: string;
+  if (target === 'main') {
+    ref = 'refs/heads/main';
+    try {
+      git(firmware, ['show-ref', '--verify', '--quiet', ref]);
+    } catch {
+      throw new Error('Firmware target main requires local refs/heads/main. Fetch or create that branch in the firmware checkout first.');
+    }
+  } else {
+    if (!releasePattern.test(target)) throw new Error('Select an exact release tag such as v0.7.10, or the literal main.');
+    if (!listReleases(firmware).includes(target)) {
+      throw new Error(`Release ${target} is not available locally. Fetch the desired tag into the firmware checkout first.`);
+    }
+    ref = `refs/tags/${target}`;
   }
-  const commit = git(firmware, ['rev-parse', '--verify', `refs/tags/${release}^{commit}`]).trim();
+  const commit = git(firmware, ['rev-parse', '--verify', `${ref}^{commit}`]).trim();
   const root = git(firmware, ['ls-tree', '-z', commit, '--', 'CMakeLists.txt']);
   if (!/^100(?:644|755) blob [a-f0-9]+\tCMakeLists\.txt\0$/.test(root)) {
-    throw new Error(`Release ${release} does not contain a regular root CMakeLists.txt.`);
+    throw new Error(`Firmware target ${target} does not contain a regular root CMakeLists.txt.`);
   }
   return commit;
 }
@@ -87,12 +98,12 @@ function discoverBoards(firmware: string, commit: string, configs?: string): str
 }
 
 export function listBoards(firmware: string, release: string, configs?: string): string[] {
-  return discoverBoards(firmware, releaseCommit(firmware, release), configs);
+  return discoverBoards(firmware, targetCommit(firmware, release), configs);
 }
 
 export function selectBuild(firmware: string, release: string, board: string, configs?: string): BuildSelection {
   if (!boardPattern.test(board)) throw new Error('Select a board name, not a path.');
-  const commit = releaseCommit(firmware, release);
+  const commit = targetCommit(firmware, release);
   const boards = discoverBoards(firmware, commit, configs);
   if (!boards.includes(board)) {
     throw new Error(`Unknown board ${board} in ${configs === undefined ? `release ${release}` : 'external configs'}. Use list-boards to see available names.`);
