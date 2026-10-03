@@ -71,6 +71,27 @@ test('publishes main builds under the full commit with a commit-qualified filena
   assert.equal(metadata.artifact.filename, `GP2040-CE_main_${commit}_Pico.uf2`);
 });
 
+test('publishes any safely named board under its own directory and filename', () => {
+  const workingDirectory = join(directory, 'board tree');
+  const source = join(directory, 'opencore0.uf2');
+  writeFileSync(source, Buffer.concat([uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)]));
+  const commit = 'b'.repeat(40);
+  const result = publishArtifact({
+    source, workingDirectory, runId: 'oc-run', release: 'main', commit, board: 'OpenCore0', buildType: 'release', metadata: {},
+  });
+  assert.equal(result.path, join(workingDirectory, 'artifacts', 'OpenCore0', 'main', commit, 'release', 'oc-run', `GP2040-CE_main_${commit}_OpenCore0.uf2`));
+});
+
+test('rejects board names that are unsafe as path segments', () => {
+  const workingDirectory = join(directory, 'board tree');
+  const source = join(directory, 'unsafe.uf2');
+  writeFileSync(source, Buffer.concat([uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)]));
+  const options = { source, workingDirectory, runId: 'unsafe', release: 'main', commit: 'c'.repeat(40), buildType: 'release', metadata: {} };
+  for (const board of ['../x', 'a/b', 'a\\b', '', '.']) {
+    assert.throws(() => publishArtifact({ ...options, board }), /board/i);
+  }
+});
+
 test('requires a full lowercase commit for main publication', () => {
   const workingDirectory = join(directory, 'main tree');
   const source = join(directory, 'main-invalid.uf2');

@@ -1,11 +1,15 @@
-# Building a Flashable Pico UF2
+# Building a Flashable RP2040 UF2
 
 **Status: implemented and integration-built on Windows x64.** The supported builds
-are for the original Raspberry Pi **Pico** (RP2040): GP2040-CE **0.7.12** from
-upstream tag `v0.7.12`, and development builds of GP2040-CE `main`. Either target
-may use its built-in `Pico` configuration or a `Pico` configuration from a
-caller-supplied configs folder. This is not a Pico W, Pico 2, or generic
-RP2040-board recipe. Other host profiles, boards, and build types are not
+are for **RP2040** board configurations: GP2040-CE **0.7.12** from upstream tag
+`v0.7.12`, and development builds of GP2040-CE `main`. The board may be any
+configuration discovered in the firmware's built-in `configs` directory or in a
+caller-supplied configs folder (for example the
+[Board Config Registry](https://github.com/OpenStickCommunity/Board-Config-Registry)).
+The board's platform is derived from its configuration (see
+[Board Platform](#board-platform)); boards that select an RP2350 platform, such
+as `Pico2`, are rejected. Integration-built boards are `Pico` (both targets) and
+the registry's `OpenCore0` (`main`). Other host profiles and build types are not
 supported or qualified.
 
 The released Pico example is the initial qualification case; a successful release
@@ -36,7 +40,7 @@ The release flag is the firmware version, not GPBuilder's `--version` flag.
 Use the exact tag `v0.7.12` or the exact target `main`; accepting a bare `0.7.12`
 alias is not part of this contract.
 
-Defaults are the upstream GP2040-CE repository, `configs/Pico` from that exact
+Defaults are the upstream GP2040-CE repository, `configs/<Board>` from that exact
 commit, and build type `release` (CMake `Release`). Two optional folders change
 the inputs:
 
@@ -51,7 +55,13 @@ node dist/cli.cjs --firmware <source-folder> --configs <configs-folder> --releas
 - `--configs <configs-folder>` supplies board configurations laid out like the
   firmware's `configs` directory. It must contain `<Board>/BoardConfig.h`. Its
   `<Board>` directory replaces `configs/<Board>` in the owned source copy only.
-  The caller's configs folder is never modified.
+  The caller's configs folder is never modified. A board that exists only in the
+  configs folder (not in the firmware) is supported; for example, with a local
+  registry checkout:
+
+```sh
+node dist/cli.cjs --firmware C:\ws\GP2040-CE --configs C:\ws\Board-Config-Registry\configs --release main --board OpenCore0
+```
 
 The caller needs network access for source and dependency retrieval. GPBuilder
 does not install host software. Its qualified Windows tool profile is checked
@@ -74,8 +84,23 @@ node dist/cli.cjs --firmware ./GP2040-CE --configs ./my-configs --release main -
 release tag `v0.7.12` or `main`. No implicit latest target, arbitrary branch, raw
 commit expression, `latest`, or `nightly` alias is introduced. "Nightly" describes
 building main; it does not add a scheduled workflow or download a prebuilt
-nightly artifact. Main builds currently support only `Pico` (RP2040) on Windows;
-`Pico2` requires RP2350 UF2 validation and remains unsupported.
+nightly artifact. Main builds support RP2040 boards on Windows; RP2350 boards
+such as `Pico2` require RP2350 UF2 validation and remain unsupported.
+
+### Board Platform
+
+The selected board's SDK board and platform come from the board configuration
+after any `--configs` overlay, mirroring the firmware's root `CMakeLists.txt`:
+
+- If `configs/<Board>/<Board>.cmake` exists, its `set(PICO_BOARD <value>)` and
+  `set(PICO_PLATFORM <value>)` lines supply the SDK board and platform.
+- A missing file or missing setting defaults to `PICO_BOARD=pico` and
+  `PICO_PLATFORM=rp2040`, the firmware's own defaults. For example the registry's
+  `OpenCore0` has no `.cmake` file and builds as `pico`/`rp2040`; `PicoW` sets
+  `pico_w`/`rp2040`.
+- Any platform other than `rp2040` fails before dependency setup with an error
+  naming the board and platform. The compiler profile (`pico_arm_cortex_m0plus_gcc`)
+  and UF2 validation are RP2040-only.
 
 ### Resolve Once, Build One Commit
 
@@ -160,8 +185,8 @@ has no such tag. For example, `v0.7.12-123-gabc1234` produces
 Never rename a stale or unrelated file to pass validation.
 
 Publish a main artifact under
-`artifacts/Pico/main/<full-firmware-commit>/<build-type>/<run-id>/`, using the filename
-`GP2040-CE_main_<full-firmware-commit>_Pico.uf2`. `build.json` records the original
+`artifacts/<Board>/main/<full-firmware-commit>/<build-type>/<run-id>/`, using the filename
+`GP2040-CE_main_<full-firmware-commit>_<Board>.uf2` (for example `Pico` or `OpenCore0`). `build.json` records the original
 upstream filename and embedded version, requested target, full commit, dirty flag,
 config source (`firmware` or `external`) and external config path, SDK version and
 commit, and artifact digest. Main is a development build, not an official release
@@ -306,16 +331,16 @@ This includes the release's web protobuf generation and asset embedding. Use
 web commands when tools are not found, so CMake success alone is not enough to
 prove the web configurator was built.
 
-### 5. Configure and Compile Pico
+### 5. Configure and Compile the Board
 
 Use a new build directory and Ninja for the first qualified recipe. The effective
-configuration must include:
+configuration must include (sample values for `--board Pico`):
 
 | Setting | Sample value |
 | --- | --- |
-| `GP2040_BOARDCONFIG` | `Pico` |
-| `PICO_BOARD` | `pico` (the SDK board, not `Pico`) |
-| `PICO_PLATFORM` | `rp2040` |
+| `GP2040_BOARDCONFIG` | The selected board, e.g. `Pico` |
+| `PICO_BOARD` | Derived SDK board, e.g. `pico` (not `Pico`) |
+| `PICO_PLATFORM` | Derived platform; must be `rp2040` |
 | `PICO_SDK_PATH` | Verified SDK checkout's absolute path |
 | `CMAKE_BUILD_TYPE` | `Release` |
 | `SKIP_SUBMODULES` | `TRUE`, only after explicit submodule preparation passes |
@@ -334,7 +359,7 @@ The conceptual CMake calls are below. Angle-bracket paths are placeholders for
 owned/verified paths, not literal shell commands to run today:
 
 ```text
-cmake -S <source> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DGP2040_BOARDCONFIG=Pico -DPICO_BOARD=pico -DPICO_PLATFORM=rp2040 -DPICO_SDK_PATH=<sdk> -DSKIP_SUBMODULES=TRUE -DSKIP_WEBBUILD=TRUE
+cmake -S <source> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DGP2040_BOARDCONFIG=<Board> -DPICO_BOARD=<sdk-board> -DPICO_PLATFORM=rp2040 -DPICO_SDK_PATH=<sdk> -DSKIP_SUBMODULES=TRUE -DSKIP_WEBBUILD=TRUE
 cmake --build <build> --config Release --target GP2040-CE
 ```
 
@@ -376,14 +401,17 @@ Publish only after all stages and validation succeed, under the invocation's
 working directory:
 
 ```text
-artifacts/Pico/v0.7.12/release/<run-id>/
-  GP2040-CE_0.7.12_Pico.uf2
+artifacts/<Board>/v0.7.12/release/<run-id>/
+  GP2040-CE_0.7.12_<Board>.uf2
   build.json
 
-artifacts/Pico/main/<full-commit>/<build-type>/<run-id>/
-  GP2040-CE_main_<full-commit>_Pico.uf2
+artifacts/<Board>/main/<full-commit>/<build-type>/<run-id>/
+  GP2040-CE_main_<full-commit>_<Board>.uf2
   build.json
 ```
+
+`<Board>` is the selected board config folder name and must contain only ASCII
+letters, digits, `_`, or `-`; other names are rejected before publication.
 
 Use a collision-resistant run ID and atomic publication of the validated result;
 never overwrite a previous successful run. The metadata includes original and
@@ -476,9 +504,16 @@ checks above:
 11. Test `--configs`: the board overlay replaces the source copy's board config,
     a missing `<Board>/BoardConfig.h` fails before any build stage, the caller's
     directories are unchanged, and metadata records the external config path.
+12. Test board platform derivation: no `<Board>.cmake` yields `pico`/`rp2040`,
+    `set(PICO_BOARD ...)`/`set(PICO_PLATFORM ...)` values are used, an RP2350
+    platform fails naming the board, and configure arguments, environment,
+    artifact name, and metadata use the selected board. Execute a real build of a
+    board supplied only by an external configs folder (`OpenCore0` from the
+    registry on `main`).
 
 The [matrix schema](matrix.md) defines parsing and normalization; matrix execution
-still needs its pending policy decisions documented. External configs are
-supported for the Pico board only (both targets). Other boards (including Pico2),
-other releases, caching, automatic host tool installation, and flashing
-automation are not established by this worked example.
+still needs its pending policy decisions documented. RP2040 boards are supported
+from built-in or external configs (both targets); only `Pico` and `OpenCore0`
+have been integration-built, and no image has been hardware-tested. RP2350 boards
+(including Pico2), other releases, caching, automatic host tool installation, and
+flashing automation are not established by this worked example.

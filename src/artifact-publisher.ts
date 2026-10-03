@@ -29,14 +29,17 @@ interface ArtifactLayout {
 }
 
 function artifactLayout(options: PublishOptions): ArtifactLayout {
-  if (options.board !== 'Pico' || options.buildType !== 'release') {
-    throw new Error('Artifact publication currently supports Pico release builds only.');
+  if (!/^[A-Za-z0-9_-]+$/.test(options.board)) {
+    throw new Error('Artifact board name contains unsupported characters.');
+  }
+  if (options.buildType !== 'release') {
+    throw new Error('Artifact publication currently supports release builds only.');
   }
   const { board, buildType } = options;
   if (options.release === 'v0.7.12') {
     return {
       segments: [board, 'v0.7.12', buildType],
-      filename: 'GP2040-CE_0.7.12_Pico.uf2',
+      filename: `GP2040-CE_0.7.12_${board}.uf2`,
       requested: { release: options.release, board, buildType },
     };
   }

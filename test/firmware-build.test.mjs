@@ -18,7 +18,8 @@ const {
   validateFirmwareBuildRequest,
   firmwareConfigureArgs,
   nanopbPipConstraint,
-} = createRequire(import.meta.url)(join(directory, 'firmware-build.cjs'));
+  resolveBoardPlatform,
+} =  createRequire(import.meta.url)(join(directory, 'firmware-build.cjs'));
 
 const mainCmake = `cmake_minimum_required(VERSION 3.10)
 set(sdkVersion 2.3.1)
@@ -30,7 +31,7 @@ endif()
 `;
 
 test('configure arguments use prebuilt pioasm and picotool packages when available', () => {
-  const base = { sourceDirectory: 'src', buildDirectory: 'build', ninja: 'ninja.exe', sdkDirectory: 'sdk', python: 'python.exe', toolsDirectory: 'tools' };
+  const base = { sourceDirectory: 'src', buildDirectory: 'build', ninja: 'ninja.exe', sdkDirectory: 'sdk', python: 'python.exe', toolsDirectory: 'tools', board: 'OpenCore0', picoBoard: 'pico', picoPlatform: 'rp2040' };
   const fetched = firmwareConfigureArgs(base);
   assert.ok(fetched.includes('-DPICOTOOL_FETCH_FROM_GIT_PATH=tools'));
   assert.ok(!fetched.some((arg) => arg.startsWith('-Dpioasm_DIR=') || arg.startsWith('-Dpicotool_DIR=')));
@@ -40,6 +41,27 @@ test('configure arguments use prebuilt pioasm and picotool packages when availab
   assert.ok(prebuilt.includes('-Dpicotool_DIR=pt'));
   assert.ok(!prebuilt.some((arg) => arg.startsWith('-DPICOTOOL_FETCH_FROM_GIT_PATH=')));
   assert.deepEqual(prebuilt.slice(0, 4), fetched.slice(0, 4));
+});
+
+test('configure arguments name the requested board and its derived SDK board and platform', () => {
+  const args = firmwareConfigureArgs({ sourceDirectory: 'src', buildDirectory: 'build', ninja: 'ninja.exe', sdkDirectory: 'sdk', python: 'python.exe', toolsDirectory: 'tools', board: 'OpenCore0', picoBoard: 'pico', picoPlatform: 'rp2040' });
+  assert.ok(args.includes('-DGP2040_BOARDCONFIG=OpenCore0'));
+  assert.ok(args.includes('-DPICO_BOARD=pico'));
+  assert.ok(args.includes('-DPICO_PLATFORM=rp2040'));
+  assert.ok(!args.includes('-DGP2040_BOARDCONFIG=Pico'));
+});
+
+test('derives the board platform from the optional board cmake file', () => {
+  assert.deepEqual(resolveBoardPlatform('OpenCore0', undefined), { picoBoard: 'pico', picoPlatform: 'rp2040' });
+  assert.deepEqual(resolveBoardPlatform('PicoW', 'set(PICO_BOARD pico_w)\n'), { picoBoard: 'pico_w', picoPlatform: 'rp2040' });
+  assert.deepEqual(
+    resolveBoardPlatform('Custom', '# set(PICO_BOARD ignored)\nset(PICO_BOARD "my_board")\nset(PICO_PLATFORM rp2040)\n'),
+    { picoBoard: 'my_board', picoPlatform: 'rp2040' },
+  );
+  assert.throws(
+    () => resolveBoardPlatform('Pico2', 'set(PICO_BOARD pico2)\nset(PICO_PLATFORM rp2350)\n'),
+    /Pico2.*rp2350.*only RP2040/i,
+  );
 });
 
 test('constrains setuptools only when nanopb requirements leave it unpinned', () => {
@@ -116,7 +138,7 @@ test('validates release, board, host, and supplied folders before building', () 
   assert.doesNotThrow(() => validateFirmwareBuildRequest({ ...base, release: 'main', firmware, configs }));
   assert.doesNotThrow(() => validateFirmwareBuildRequest({ ...base, release: 'v0.7.12', configs }));
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'v0.7.11' }), /v0\.7\.12 or main/);
-  assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', board: 'Pico2' }), /board Pico/);
+  assert.doesNotThrow(() => validateFirmwareBuildRequest({ ...base, release: 'main', board: 'OpenCore0', firmware, configs }));
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', firmware: join(directory, 'missing') }), /Firmware source folder.*not found/i);
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', configs: join(directory, 'missing') }), /Configs folder.*not found/i);
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', platform: 'linux' }), /only been integration-qualified on Windows x64/);

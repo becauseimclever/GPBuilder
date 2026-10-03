@@ -570,14 +570,17 @@ function validateUf2(data) {
 
 // src/artifact-publisher.ts
 function artifactLayout(options) {
-  if (options.board !== "Pico" || options.buildType !== "release") {
-    throw new Error("Artifact publication currently supports Pico release builds only.");
+  if (!/^[A-Za-z0-9_-]+$/.test(options.board)) {
+    throw new Error("Artifact board name contains unsupported characters.");
+  }
+  if (options.buildType !== "release") {
+    throw new Error("Artifact publication currently supports release builds only.");
   }
   const { board, buildType } = options;
   if (options.release === "v0.7.12") {
     return {
       segments: [board, "v0.7.12", buildType],
-      filename: "GP2040-CE_0.7.12_Pico.uf2",
+      filename: `GP2040-CE_0.7.12_${board}.uf2`,
       requested: { release: options.release, board, buildType }
     };
   }
@@ -878,6 +881,22 @@ function firmwareOutputName(describe, board) {
   const version = /^v(\d+\.\d+\.\d+)/.exec(describe)?.[1] ?? "0.0.0";
   return `GP2040-CE_${version}_${board}`;
 }
+function cmakeSetValue(cmakeText, name) {
+  for (const rawLine of cmakeText.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, "");
+    const match = new RegExp(`^\\s*set\\s*\\(\\s*${name}\\s+("([^"]*)"|[^\\s)]+)`, "i").exec(line);
+    if (match) return match[2] ?? match[1];
+  }
+  return void 0;
+}
+function resolveBoardPlatform(board, boardCmakeText) {
+  const picoBoard = boardCmakeText && cmakeSetValue(boardCmakeText, "PICO_BOARD") || "pico";
+  const picoPlatform = boardCmakeText && cmakeSetValue(boardCmakeText, "PICO_PLATFORM") || "rp2040";
+  if (picoPlatform !== "rp2040") {
+    throw new Error(`Board ${board} targets ${picoPlatform}; GPBuilder currently supports only RP2040 boards.`);
+  }
+  return { picoBoard, picoPlatform };
+}
 function nanopbPipConstraint(requirementsText) {
   if (requirementsText !== void 0 && /^\s*setuptools\b/im.test(requirementsText)) {
     return void 0;
@@ -895,9 +914,9 @@ function firmwareConfigureArgs(input) {
     "Ninja",
     `-DCMAKE_MAKE_PROGRAM=${input.ninja}`,
     "-DCMAKE_BUILD_TYPE=Release",
-    "-DGP2040_BOARDCONFIG=Pico",
-    "-DPICO_BOARD=pico",
-    "-DPICO_PLATFORM=rp2040",
+    `-DGP2040_BOARDCONFIG=${input.board}`,
+    `-DPICO_BOARD=${input.picoBoard}`,
+    `-DPICO_PLATFORM=${input.picoPlatform}`,
     `-DPICO_SDK_PATH=${input.sdkDirectory}`,
     `-DPython3_EXECUTABLE=${input.python}`,
     "-DSKIP_SUBMODULES=TRUE",
@@ -907,11 +926,8 @@ function firmwareConfigureArgs(input) {
 }
 function validateFirmwareBuildRequest(options) {
   selectToolProfile(options.release);
-  if (options.board !== "Pico") {
-    throw new Error("Firmware builds currently support only board Pico and the Release build type.");
-  }
   if ((options.platform ?? process.platform) !== "win32") {
-    throw new Error("The Pico firmware build has only been integration-qualified on Windows x64.");
+    throw new Error("Firmware builds have only been integration-qualified on Windows x64.");
   }
   if (options.firmware !== void 0 && !isDirectory(options.firmware)) {
     throw new Error(`Firmware source folder was not found: ${options.firmware}`);
@@ -1054,11 +1070,13 @@ ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
       if (options.release === "main") {
         await runProcess(execute, "git", ["-C", sourceDirectory, "update-ref", "refs/heads/main", source.commit], "Record materialized main commit", 3e4);
       }
-      if (options.configs !== void 0) applyConfigsOverlay(sourceDirectory, options.configs, "Pico");
+      if (options.configs !== void 0) applyConfigsOverlay(sourceDirectory, options.configs, options.board);
       checkMinimums(parseCmakeMinimums((0, import_node_fs6.readFileSync)((0, import_node_path6.join)(sourceDirectory, "CMakeLists.txt"), "utf8")), toolProfile);
       return { stdout: `Firmware commit ${source.commit}${source.dirty ? " (dirty)" : ""}`, stderr: "" };
     });
     const selection = selectBuild(sourceDirectory, options.release, options.board, options.configs);
+    const boardCmake = (0, import_node_path6.join)(sourceDirectory, "configs", options.board, `${options.board}.cmake`);
+    const { picoBoard, picoPlatform } = resolveBoardPlatform(options.board, (0, import_node_fs6.existsSync)(boardCmake) ? (0, import_node_fs6.readFileSync)(boardCmake, "utf8") : void 0);
     options.log(`Release: ${selection.release}
 Firmware commit: ${selection.commit}
 Board: ${selection.board}
@@ -1123,9 +1141,9 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       PICO_SDK_PATH: sdkDirectory,
       PICO_TOOLCHAIN_PATH: (0, import_node_path6.join)(toolchain.root, "toolchain", armToolchainVersion),
       PICO_PIO_USB_PATH: (0, import_node_path6.join)(sourceDirectory, "lib", "pico_pio_usb"),
-      PICO_BOARD: "pico",
-      PICO_PLATFORM: "rp2040",
-      GP2040_BOARDCONFIG: "Pico",
+      PICO_BOARD: picoBoard,
+      PICO_PLATFORM: picoPlatform,
+      GP2040_BOARDCONFIG: options.board,
       PICO_COMPILER: "pico_arm_cortex_m0plus_gcc",
       SKIP_SUBMODULES: "TRUE",
       SKIP_WEBBUILD: "TRUE",
@@ -1149,8 +1167,11 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       sdkDirectory,
       python: toolchain.python,
       toolsDirectory: (0, import_node_path6.join)(runDirectory, "tools"),
-      prebuilt: toolchain.prebuilt
-    }), "Configure GP2040-CE Pico firmware", 18e5, { env: environment }));
+      prebuilt: toolchain.prebuilt,
+      board: options.board,
+      picoBoard,
+      picoPlatform
+    }), `Configure GP2040-CE ${options.board} firmware`, 18e5, { env: environment }));
     await recordStage("compile firmware and generate UF2", () => runProcess(execute, toolchain.cmake, [
       "--build",
       buildDirectory,
@@ -1165,8 +1186,8 @@ ${submodules.stdout}`, stderr: submodules.stderr };
     const cache = (0, import_node_fs6.readFileSync)(cachePath, "utf8");
     const expectedCache = /* @__PURE__ */ new Map([
       ["CMAKE_BUILD_TYPE", "Release"],
-      ["GP2040_BOARDCONFIG", "Pico"],
-      ["PICO_BOARD", "pico"],
+      ["GP2040_BOARDCONFIG", options.board],
+      ["PICO_BOARD", picoBoard],
       ["PICO_SDK_PATH", sdkDirectory.replaceAll("\\", "/")],
       ["Python3_EXECUTABLE", toolchain.python.replaceAll("\\", "/")]
     ]);
@@ -1178,13 +1199,13 @@ ${submodules.stdout}`, stderr: submodules.stderr };
     if (options.release === taggedRelease2 && version !== taggedRelease2) {
       throw new Error(`Materialized source reports ${version}, expected ${taggedRelease2}.`);
     }
-    const outputName = firmwareOutputName(version, "Pico");
+    const outputName = firmwareOutputName(version, options.board);
     const artifactSource = (0, import_node_path6.join)(buildDirectory, `${outputName}.uf2`);
-    const elf = requireFile((0, import_node_path6.join)(buildDirectory, `${outputName}.elf`), "Expected Pico ELF");
-    requireFile(artifactSource, "Expected Pico UF2");
+    const elf = requireFile((0, import_node_path6.join)(buildDirectory, `${outputName}.elf`), `Expected ${options.board} ELF`);
+    requireFile(artifactSource, `Expected ${options.board} UF2`);
     const elfBytes = (0, import_node_fs6.readFileSync)(elf);
     if (!elfBytes.includes(Buffer.from(outputName)) || !elfBytes.includes(Buffer.from(version))) {
-      throw new Error(`The built ELF does not identify the expected ${version} Pico firmware target.`);
+      throw new Error(`The built ELF does not identify the expected ${version} ${options.board} firmware target.`);
     }
     const elfInfo = {
       filename: `${outputName}.elf`,
@@ -1202,7 +1223,7 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       sdk: { tag: sdkTag, commit: sdkCommit, submodules: sdkSubmodules },
       dependencies: { arduinoJsonCommit, ...hostToolDependencies, pythonPackages: freeze.stdout.trim().split(/\r?\n/) },
       tools: { node: process.version, cmake: cmakeVersion, ninja: ninjaVersion, armGcc: armCompilerVersion, python: "3.13", buildType: "Release" },
-      configuration: { board: "Pico", picoBoard: "pico", firmwareVersion: version, upstreamFilename: `${outputName}.uf2`, configSource: selection.configSource, configPath: selection.configPath, elf: elfInfo },
+      configuration: { board: options.board, picoBoard, picoPlatform, firmwareVersion: version, upstreamFilename: `${outputName}.uf2`, configSource: selection.configSource, configPath: selection.configPath, elf: elfInfo },
       qualification: { platform: "Windows x64", hardwareSmokeTest: false }
     };
     const artifact = publishArtifact({
@@ -1211,7 +1232,7 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       runId,
       release: options.release,
       commit: firmwareCommit,
-      board: "Pico",
+      board: options.board,
       buildType: "release",
       metadata
     });
