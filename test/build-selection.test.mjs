@@ -252,11 +252,11 @@ test('an unsupported Action build profile fails before prerequisite repair', () 
   const calls = [];
   assert.throws(() => run({
     mode: 'action', operation: 'build', release: 'v0.7.12', board: 'Pico',
-    host: { platform: 'linux', ubuntu: true, githubActions: true }, log: () => {},
+    host: { platform: 'darwin', ubuntu: false, githubActions: true }, log: () => {},
     execute: (command) => {
       calls.push(command);
       return { status: null, stdout: '', stderr: '', missing: true };
     },
-  }), /only been integration-qualified on Windows x64/);
+  }), /only qualified on Windows x64 and Ubuntu x64; detected darwin/);
   assert.deepEqual(calls, []);
 });

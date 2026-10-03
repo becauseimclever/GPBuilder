@@ -19,7 +19,8 @@ const {
   firmwareConfigureArgs,
   nanopbPipConstraint,
   resolveBoardPlatform,
-} =  createRequire(import.meta.url)(join(directory, 'firmware-build.cjs'));
+  hostProfile,
+} =   createRequire(import.meta.url)(join(directory, 'firmware-build.cjs'));
 
 const mainCmake = `cmake_minimum_required(VERSION 3.10)
 set(sdkVersion 2.3.1)
@@ -141,5 +142,29 @@ test('validates release, board, host, and supplied folders before building', () 
   assert.doesNotThrow(() => validateFirmwareBuildRequest({ ...base, release: 'main', board: 'OpenCore0', firmware, configs }));
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', firmware: join(directory, 'missing') }), /Firmware source folder.*not found/i);
   assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', configs: join(directory, 'missing') }), /Configs folder.*not found/i);
-  assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', platform: 'linux' }), /only been integration-qualified on Windows x64/);
+  assert.doesNotThrow(() => validateFirmwareBuildRequest({ ...base, release: 'main', platform: 'linux' }));
+  assert.throws(() => validateFirmwareBuildRequest({ ...base, release: 'main', platform: 'darwin' }), /Windows x64 and Ubuntu x64/);
+});
+
+test('selects Windows host conventions', () => {
+  const host = hostProfile('win32');
+  assert.equal(host.label, 'Windows x64');
+  assert.equal(host.executable('cmake'), 'cmake.exe');
+  assert.deepEqual(host.pythonLocator, { command: 'py.exe', args: ['-3.13', '-c', 'import sys; print(sys.executable)'] });
+  assert.equal(host.venvPython(join('b')), join('b', 'venv', 'Scripts', 'python.exe'));
+  assert.deepEqual(host.npm(['run', 'build']), { command: 'cmd.exe', args: ['/d', '/s', '/c', 'npm.cmd run build'] });
+  assert.equal(host.pathDelimiter, ';');
+  assert.equal(host.hostCompiler, 'visual-studio');
+});
+
+test('selects Ubuntu host conventions', () => {
+  const host = hostProfile('linux');
+  assert.equal(host.label, 'Ubuntu x64');
+  assert.equal(host.executable('cmake'), 'cmake');
+  assert.deepEqual(host.pythonLocator, { command: 'python3.13', args: ['-c', 'import sys; print(sys.executable)'] });
+  assert.equal(host.venvPython(join('b')), join('b', 'venv', 'bin', 'python'));
+  assert.deepEqual(host.npm(['ci']), { command: 'npm', args: ['ci'] });
+  assert.equal(host.pathDelimiter, ':');
+  assert.equal(host.hostCompiler, 'path');
+  assert.throws(() => hostProfile('darwin'), /Windows x64 and Ubuntu x64/);
 });

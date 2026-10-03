@@ -1,6 +1,8 @@
 # Building a Flashable RP2040 UF2
 
-**Status: implemented and integration-built on Windows x64.** The supported builds
+**Status: implemented and integration-built on Windows x64; an Ubuntu x64
+host profile for the GitHub Action is implemented and awaiting its first real
+integration build (see [Host Profiles](#host-profiles)).** The supported builds
 are for **RP2040** board configurations: GP2040-CE **0.7.12** from upstream tag
 `v0.7.12`, and development builds of GP2040-CE `main`. The board may be any
 configuration discovered in the firmware's built-in `configs` directory or in a
@@ -9,8 +11,8 @@ caller-supplied configs folder (for example the
 The board's platform is derived from its configuration (see
 [Board Platform](#board-platform)); boards that select an RP2350 platform, such
 as `Pico2`, are rejected. Integration-built boards are `Pico` (both targets) and
-the registry's `OpenCore0` (`main`). Other host profiles and build types are not
-supported or qualified.
+the registry's `OpenCore0` (`main`). Other host profiles (including macOS) and
+build types are not supported or qualified.
 
 The released Pico example is the initial qualification case; a successful release
 build does not establish that a later main commit builds or runs correctly. Each
@@ -18,7 +20,7 @@ main build reports the exact commit it built.
 
 ## User Contract
 
-From the GPBuilder repository root on the qualified Windows x64 host, supply only
+From the GPBuilder repository root on a supported host, supply only
 the firmware release and board:
 
 ```sh
@@ -64,8 +66,9 @@ node dist/cli.cjs --firmware C:\ws\GP2040-CE --configs C:\ws\Board-Config-Regist
 ```
 
 The caller needs network access for source and dependency retrieval. GPBuilder
-does not install host software. Its qualified Windows tool profile is checked
-before dependency setup; other host profiles are unsupported.
+does not install host software. The tool profile for the host (see
+[Host Profiles](#host-profiles)) is checked before dependency setup; other host
+profiles are unsupported.
 
 A successful run prints an absolute path to a newly built, validated UF2 (for
 example `GP2040-CE_0.7.12_Pico.uf2`), its byte size, and SHA-256 digest, then exits 0.
@@ -84,7 +87,7 @@ node dist/cli.cjs --firmware ./GP2040-CE --configs ./my-configs --release main -
 release tag `v0.7.12` or `main`. No implicit latest target, arbitrary branch, raw
 commit expression, `latest`, or `nightly` alias is introduced. "Nightly" describes
 building main; it does not add a scheduled workflow or download a prebuilt
-nightly artifact. Main builds support RP2040 boards on Windows; RP2350 boards
+nightly artifact. Main builds support RP2040 boards on supported hosts; RP2350 boards
 such as `Pico2` require RP2350 UF2 validation and remain unsupported.
 
 ### Board Platform
@@ -134,7 +137,7 @@ Each supported target has a pinned, qualified tool profile:
 | `v0.7.12` | 2.1.1 (commit `bddd20f928ce76142793bef434d4f75f4af6e433`) | 2.1.1 | `15_2_Rel1` |
 | `main` | 2.3.1 (resolved commit recorded) | 2.3.1 | `15_2_Rel1` |
 
-Both profiles use CMake 4.3.4, Ninja 1.13.2, Python 3.13 (`py.exe -3.13`), and
+Both profiles use CMake 4.3.4, Ninja 1.13.2, Python 3.13, and
 SDK host tools (`pioasm` and `picotool`). When the Pico extension's prebuilt
 host tools for the profile are installed under the Pico root, GPBuilder uses
 them and no host C++ compiler or Visual Studio is required:
@@ -145,8 +148,8 @@ them and no host C++ compiler or Visual Studio is required:
 
 They are passed to CMake as `pioasm_DIR` and `picotool_DIR`, and the prebuilt
 picotool version and path are recorded in provenance. If either is missing,
-the SDK builds the host tools from source, which requires the Visual Studio
-2022 C++ host tools described below. SDK 2.3.1 does not build
+the SDK builds the host tools from source with the host's native C++ compiler
+(see [Host Profiles](#host-profiles)). SDK 2.3.1 does not build
 `v0.7.12` (its bundled Mbed TLS integration is incompatible), so release and main
 builds cannot share one SDK. Python 3.14 is not used because `grpcio-tools` has no
 compatible wheel.
@@ -160,9 +163,31 @@ cannot be found, or the source requires a newer SDK, picotool, or toolchain than
 the pinned profile, the build fails with the required and pinned versions instead
 of guessing. Firmware scripts are never executed to discover these values.
 
+### Host Profiles
+
+GPBuilder never installs host tools. Each supported host expects the pinned
+tools under the Pico root (default `~/.pico-sdk`):
+
+| Host | Tool names | Python 3.13 | Native host compiler (fallback only) | PATH delimiter | Metadata label |
+|---|---|---|---|---|---|
+| Windows x64 (`win32`) | `cmake.exe`, `ninja.exe`, `arm-none-eabi-gcc.exe`, `arm-none-eabi-g++.exe` | `py.exe -3.13` | Visual Studio 2022 C++ tools via vswhere/VsDevCmd | `;` | `Windows x64` |
+| Ubuntu x64 (`linux`) | `cmake`, `ninja`, `arm-none-eabi-gcc`, `arm-none-eabi-g++` (no suffix) | `python3.13` on `PATH` | `gcc`/`g++` from the inherited `PATH` | `:` | `Ubuntu x64` |
+
+Tool paths are `cmake/v4.3.4/bin/cmake[.exe]`, `ninja/v1.13.2/ninja[.exe]`, and
+`toolchain/15_2_Rel1/bin/arm-none-eabi-{gcc,g++}[.exe]`. On Ubuntu, npm is
+invoked directly rather than through `cmd.exe`. Any other platform, including
+macOS (`darwin`), is rejected before side effects.
+
+On Ubuntu, the calling workflow is responsible for provisioning the tool layout
+(for example by downloading the Arm GNU 15.2.Rel1 Linux toolchain, CMake 4.3.4,
+and Ninja 1.13.2 into `~/.pico-sdk`, and using `actions/setup-python` for 3.13).
+GPBuilder only discovers and validates them. The Ubuntu profile is exercised by a
+real integration build through the GitHub Action; it has no hardware
+qualification.
+
 ### Validation and Setup Order
 
-1. Validate input syntax: target, board, platform, and that `--firmware` and
+1. Validate input syntax: target, board, platform (`win32` or `linux`), and that `--firmware` and
    `--configs` (when supplied) are existing directories. Local mode never installs
    host tools.
 2. Materialize the selected source in owned storage and apply any configs overlay.
@@ -227,8 +252,11 @@ missing or unqualified versions rather than silently selecting them.
 
 For this Windows recipe, use Python 3.13: it has a compatible binary wheel for
 the pinned `grpcio-tools==1.71.0`. Python 3.14 attempted to build that package
-from source and failed with incompatible MSVC C/C++ standard flags. Other Python
-versions and operating systems still require separate build qualification.
+from source and failed with incompatible MSVC C/C++ standard flags. The Ubuntu
+x64 profile also uses Python 3.13 (`python3.13`) and the host GCC for SDK
+utilities; it is qualified only by the GitHub Action integration build recorded
+in the acceptance criteria. Other Python versions and operating systems still
+require separate build qualification.
 
 GPBuilder runs on Node.js 24. The tagged v0.7.12 web `npm ci` and build have been
 verified on Node 24. Upstream testing on Node 20 alone would not prove that
@@ -358,7 +386,10 @@ SDK, generator, Pico-PIO-USB, and Pico-extension discovery from unrelated machin
 settings. Detected tools must be the tools actually used by CMake, including host
 compiler setup for SDK utilities when they are built from source; finding an MSVC
 executable alone is not a complete Visual Studio compile/link environment. When
-prebuilt `pioasm` and `picotool` are used, Visual Studio is not probed.
+prebuilt `pioasm` and `picotool` are used, Visual Studio is not probed. On
+Ubuntu, Visual Studio is never probed: SDK utilities are built with the `gcc`/`g++`
+found on the inherited `PATH`, and the child environment starts from the inherited
+environment with the overrides above applied.
 
 The conceptual CMake calls are below. Angle-bracket paths are placeholders for
 owned/verified paths, not literal shell commands to run today:
@@ -485,8 +516,9 @@ checks above:
    wrong family, invalid blocks/addresses, wrong board/version metadata, hash
    mismatches, publication failures, and concurrent/debug-release isolation.
 5. Run `npm run check`, regenerate tracked bundles, and run a separately identified
-   real source-build integration on Windows, macOS, and Linux before claiming
-   those hosts supported. Record actual SDK/compiler/Node/Python versions and
+   real source-build integration on each host profile before claiming it
+   supported (Windows x64 locally; Ubuntu x64 through the Action; macOS remains
+   unsupported). Record actual SDK/compiler/Node/Python versions and
    whether the web/configuration generation worked. Never install host packages
    or use the network in unit tests.
 6. Starting without firmware/config paths, the two-flag sample must produce the
@@ -515,6 +547,12 @@ checks above:
     artifact name, and metadata use the selected board. Execute a real build of a
     board supplied only by an external configs folder (`OpenCore0` from the
     registry on `main`).
+13. Test the Ubuntu host profile with injected platform `linux`: tool paths have
+    no `.exe`, Python is discovered with `python3.13`, Visual Studio is never
+    probed, `PATH` entries are joined with `:`, npm is invoked directly, and
+    metadata records `Ubuntu x64`. `darwin` must still be rejected before side
+    effects. Execute a real `ubuntu-latest` Action build of `Pico` and
+    `OpenCore0` on `main` before claiming the Ubuntu profile supported.
 
 The [matrix schema](matrix.md) defines parsing and normalization; matrix execution
 still needs its pending policy decisions documented. RP2040 boards are supported

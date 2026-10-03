@@ -20472,11 +20472,35 @@ function firmwareConfigureArgs(input) {
     ...hostTools
   ];
 }
+var pythonExecutableProbe = ["-c", "import sys; print(sys.executable)"];
+function hostProfile(platform2) {
+  if (platform2 === "win32") {
+    return {
+      label: "Windows x64",
+      executable: (name) => `${name}.exe`,
+      pythonLocator: { command: "py.exe", args: ["-3.13", ...pythonExecutableProbe] },
+      venvPython: (directory) => (0, import_node_path6.join)(directory, "venv", "Scripts", "python.exe"),
+      npm: (args) => ({ command: "cmd.exe", args: ["/d", "/s", "/c", `npm.cmd ${args.join(" ")}`] }),
+      pathDelimiter: ";",
+      hostCompiler: "visual-studio"
+    };
+  }
+  if (platform2 === "linux") {
+    return {
+      label: "Ubuntu x64",
+      executable: (name) => name,
+      pythonLocator: { command: "python3.13", args: [...pythonExecutableProbe] },
+      venvPython: (directory) => (0, import_node_path6.join)(directory, "venv", "bin", "python"),
+      npm: (args) => ({ command: "npm", args: [...args] }),
+      pathDelimiter: ":",
+      hostCompiler: "path"
+    };
+  }
+  throw new Error(`Firmware builds are only qualified on Windows x64 and Ubuntu x64; detected ${platform2}.`);
+}
 function validateFirmwareBuildRequest(options) {
   selectToolProfile(options.release);
-  if ((options.platform ?? process.platform) !== "win32") {
-    throw new Error("Firmware builds have only been integration-qualified on Windows x64.");
-  }
+  hostProfile(options.platform ?? process.platform);
   if (options.firmware !== void 0 && !isDirectory2(options.firmware)) {
     throw new Error(`Firmware source folder was not found: ${options.firmware}`);
   }
@@ -20500,12 +20524,13 @@ async function runProcess(execute, command, args, stage, timeoutMs, options = {}
 }
 async function discoverToolchain(options, execute, sdkTag) {
   const picoRoot = (0, import_node_path6.resolve)(options.picoRoot ?? (0, import_node_path6.join)((0, import_node_os2.homedir)(), ".pico-sdk"));
+  const host = hostProfile(options.platform ?? process.platform);
   const prebuilt = findPicoPrebuiltTools(picoRoot, sdkTag);
-  const cmake = requireFile((0, import_node_path6.join)(picoRoot, "cmake", `v${cmakeVersion}`, "bin", "cmake.exe"), `CMake ${cmakeVersion}`);
-  const ninja = requireFile((0, import_node_path6.join)(picoRoot, "ninja", `v${ninjaVersion}`, "ninja.exe"), `Ninja ${ninjaVersion}`);
+  const cmake = requireFile((0, import_node_path6.join)(picoRoot, "cmake", `v${cmakeVersion}`, "bin", host.executable("cmake")), `CMake ${cmakeVersion}`);
+  const ninja = requireFile((0, import_node_path6.join)(picoRoot, "ninja", `v${ninjaVersion}`, host.executable("ninja")), `Ninja ${ninjaVersion}`);
   const armBin = (0, import_node_path6.join)(picoRoot, "toolchain", armToolchainVersion, "bin");
-  const gcc = requireFile((0, import_node_path6.join)(armBin, "arm-none-eabi-gcc.exe"), `Arm GNU ${armToolchainVersion} GCC`);
-  const gxx = requireFile((0, import_node_path6.join)(armBin, "arm-none-eabi-g++.exe"), `Arm GNU ${armToolchainVersion} G++`);
+  const gcc = requireFile((0, import_node_path6.join)(armBin, host.executable("arm-none-eabi-gcc")), `Arm GNU ${armToolchainVersion} GCC`);
+  const gxx = requireFile((0, import_node_path6.join)(armBin, host.executable("arm-none-eabi-g++")), `Arm GNU ${armToolchainVersion} G++`);
   const gccVersion = await runProcess(execute, gcc, ["--version"], "Check Arm GCC version", 1e4);
   const gxxVersion = await runProcess(execute, gxx, ["--version"], "Check Arm G++ version", 1e4);
   if (!gccVersion.stdout.includes(armCompilerVersion) || !gxxVersion.stdout.includes(armCompilerVersion)) {
@@ -20521,12 +20546,13 @@ async function discoverToolchain(options, execute, sdkTag) {
   const ninjaResult = await runProcess(execute, ninja, ["--version"], "Check Ninja version", 1e4);
   if (!cmakeResult.stdout.includes(cmakeVersion)) throw new Error(`CMake ${cmakeVersion} is required; detected ${cmakeResult.stdout.trim()}.`);
   if (!ninjaResult.stdout.trim().startsWith(ninjaVersion)) throw new Error(`Ninja ${ninjaVersion} is required; detected ${ninjaResult.stdout.trim()}.`);
-  const pythonResult = await runProcess(execute, "py.exe", ["-3.13", "-c", "import sys; print(sys.executable)"], "Locate Python 3.13", 1e4);
+  const pythonResult = await runProcess(execute, host.pythonLocator.command, host.pythonLocator.args, "Locate Python 3.13", 1e4);
   const python = (0, import_node_path6.resolve)(pythonResult.stdout.trim());
   requireFile(python, "Python 3.13");
   const pythonVersion = await runProcess(execute, python, ["--version"], "Check Python version", 1e4);
-  if (!/^Python 3\.13\./.test(pythonVersion.stdout.trim())) throw new Error(`Python 3.13 is required for this qualified Windows build; detected ${pythonVersion.stdout.trim()}.`);
+  if (!/^Python 3\.13\./.test(pythonVersion.stdout.trim())) throw new Error(`Python 3.13 is required for this qualified ${host.label} build; detected ${pythonVersion.stdout.trim()}.`);
   if (prebuilt !== void 0) return { root: picoRoot, cmake, ninja, python, armBin, prebuilt };
+  if (host.hostCompiler === "path") return { root: picoRoot, cmake, ninja, python, armBin };
   const vswhere = (0, import_node_path6.resolve)(options.vswhere ?? (0, import_node_path6.join)(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe"));
   requireFile(vswhere, "Visual Studio instance locator");
   const vsResult = await runProcess(execute, vswhere, [
@@ -20575,6 +20601,7 @@ function readCacheValue(cache, key) {
 }
 async function runFirmwareBuild(options) {
   validateFirmwareBuildRequest(options);
+  const host = hostProfile(options.platform ?? process.platform);
   const execute = options.execute ?? executeProcess;
   const workingDirectory = (0, import_node_path6.resolve)(options.workingDirectory ?? process.cwd());
   const runId = (0, import_node_crypto2.randomUUID)();
@@ -20640,6 +20667,9 @@ Config path: ${selection.configPath}`);
       const { pioasmVersion, pioasmDir, picotoolVersion, picotoolDir } = toolchain.prebuilt;
       options.log(`Using prebuilt pioasm ${pioasmVersion} (${pioasmDir}) and picotool ${picotoolVersion} (${picotoolDir}); no host C++ compiler required.`);
       nativeEnvironment = { ...process.env };
+    } else if (host.hostCompiler === "path") {
+      options.log("Using host GCC/G++ from PATH to build pioasm and picotool.");
+      nativeEnvironment = { ...process.env };
     } else {
       let preparedEnvironment;
       await recordStage("prepare qualified Windows host tools", async () => {
@@ -20670,11 +20700,11 @@ ${submodules.stdout}`, stderr: submodules.stderr };
     const webDirectory = (0, import_node_path6.join)(sourceDirectory, "www");
     const fsdata = (0, import_node_path6.join)(sourceDirectory, "lib", "httpd", "fsdata.c");
     if ((0, import_node_fs6.existsSync)(fsdata)) (0, import_node_fs6.rmSync)(fsdata);
-    const npm = process.platform === "win32" ? "cmd.exe" : "npm";
-    const npmArgs = (args) => process.platform === "win32" ? ["/d", "/s", "/c", `npm.cmd ${args.join(" ")}`] : args;
-    await recordStage("install web dependencies", () => runProcess(execute, npm, npmArgs(["ci"]), "Install firmware web dependencies", 12e5, { cwd: webDirectory }));
+    const npmInstall = host.npm(["ci"]);
+    const npmBuild = host.npm(["run", "build"]);
+    await recordStage("install web dependencies", () => runProcess(execute, npmInstall.command, npmInstall.args, "Install firmware web dependencies", 12e5, { cwd: webDirectory }));
     await recordStage("generate embedded web assets", async () => {
-      const result = await runProcess(execute, npm, npmArgs(["run", "build"]), "Generate firmware web assets", 12e5, { cwd: webDirectory });
+      const result = await runProcess(execute, npmBuild.command, npmBuild.args, "Generate firmware web assets", 12e5, { cwd: webDirectory });
       if (!(0, import_node_fs6.existsSync)(fsdata) || !(0, import_node_fs6.lstatSync)(fsdata).isFile() || (0, import_node_fs6.lstatSync)(fsdata).size === 0) {
         throw new Error("The web build did not generate a nonempty lib/httpd/fsdata.c.");
       }
@@ -20695,7 +20725,7 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       PICO_COMPILER: "pico_arm_cortex_m0plus_gcc",
       SKIP_SUBMODULES: "TRUE",
       SKIP_WEBBUILD: "TRUE",
-      PATH: `${toolchain.armBin};${(0, import_node_path6.dirname)(toolchain.cmake)};${(0, import_node_path6.dirname)(toolchain.ninja)};${nativeEnvironment.PATH ?? process.env.PATH ?? ""}`
+      PATH: `${toolchain.armBin}${host.pathDelimiter}${(0, import_node_path6.dirname)(toolchain.cmake)}${host.pathDelimiter}${(0, import_node_path6.dirname)(toolchain.ninja)}${host.pathDelimiter}${nativeEnvironment.PATH ?? process.env.PATH ?? ""}`
     };
     for (const key of ["CC", "CXX", "CMAKE_TOOLCHAIN_FILE", "PICO_SDK_FETCH_FROM_GIT", "PICO_SDK_FETCH_FROM_GIT_TAG", "PICO_SDK_FETCH_FROM_GIT_PATH"]) {
       delete environment[key];
@@ -20765,14 +20795,14 @@ ${submodules.stdout}`, stderr: submodules.stderr };
     const arduinoJsonCommit = await gitValue(execute, (0, import_node_path6.join)(buildDirectory, "_deps", "arduinojson-src"), ["rev-parse", "HEAD"]);
     const prebuilt = toolchain.prebuilt;
     const hostToolDependencies = prebuilt !== void 0 ? { prebuiltTools: { pioasm: { version: prebuilt.pioasmVersion, dir: prebuilt.pioasmDir }, picotool: { version: prebuilt.picotoolVersion, dir: prebuilt.picotoolDir } } } : { picotoolCommit: await gitValue(execute, (0, import_node_path6.join)(runDirectory, "tools", "picotool-src"), ["rev-parse", "HEAD"]) };
-    const freeze = await runProcess(execute, (0, import_node_path6.join)(buildDirectory, "venv", "Scripts", "python.exe"), ["-m", "pip", "freeze"], "Record build-local Python dependencies", 3e4);
+    const freeze = await runProcess(execute, host.venvPython(buildDirectory), ["-m", "pip", "freeze"], "Record build-local Python dependencies", 3e4);
     const metadata = {
       firmware: { repository: options.firmware ? (0, import_node_path6.resolve)(options.firmware) : "https://github.com/OpenStickCommunity/GP2040-CE.git", requestedRelease: options.release, commit: firmwareCommit, dirty, submodules: sourceSubmodules },
       sdk: { tag: sdkTag, commit: sdkCommit, submodules: sdkSubmodules },
       dependencies: { arduinoJsonCommit, ...hostToolDependencies, pythonPackages: freeze.stdout.trim().split(/\r?\n/) },
       tools: { node: process.version, cmake: cmakeVersion, ninja: ninjaVersion, armGcc: armCompilerVersion, python: "3.13", buildType: "Release" },
       configuration: { board: options.board, picoBoard, picoPlatform, firmwareVersion: version, upstreamFilename: `${outputName}.uf2`, configSource: selection.configSource, configPath: selection.configPath, elf: elfInfo },
-      qualification: { platform: "Windows x64", hardwareSmokeTest: false }
+      qualification: { platform: host.label, hardwareSmokeTest: false }
     };
     const artifact = publishArtifact({
       source: artifactSource,
