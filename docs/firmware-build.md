@@ -281,6 +281,11 @@ submodule's configured tracking branch must not override its pinned commit. Reco
 the source and submodule commits, and verify the materialized tree before running
 its build scripts. An unavailable object or failed submodule operation is fatal.
 
+Git-materialized sources (tags and upstream main, including submodules) are
+checked out byte-exact with `core.autocrlf=false`, regardless of the caller's
+Git configuration (for example, Windows defaults that convert to CRLF). The
+repository's `.gitattributes` rules still apply.
+
 ### 3. Prepare SDK and Dependencies
 
 Acquire a separate Pico SDK checkout from

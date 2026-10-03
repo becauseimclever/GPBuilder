@@ -51,6 +51,26 @@ test('materializes exact local tag without including dirty caller files', async 
   assert.equal(git(source, 'status', '--porcelain'), before);
 });
 
+test('materializes byte-exact sources even when caller Git converts line endings', async (context) => {
+  const source = taggedFirmware(context);
+  const crlfConfig = join(directory, 'autocrlf-gitconfig');
+  writeFileSync(crlfConfig, '[core]\n\tautocrlf = true\n');
+  const saved = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM };
+  process.env.GIT_CONFIG_GLOBAL = crlfConfig;
+  process.env.GIT_CONFIG_NOSYSTEM = '1';
+  context.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const destination = join(directory, 'autocrlf checkout');
+
+  await materializeFirmware({ source, release: 'v0.7.12', destination });
+
+  assert.equal(readFileSync(join(destination, 'CMakeLists.txt'), 'utf8'), 'project(fixture)\n');
+});
+
 test('rejects unsupported tags and occupied destinations before running Git', async () => {
   const destination = join(directory, 'occupied');
   await assert.rejects(materializeFirmware({

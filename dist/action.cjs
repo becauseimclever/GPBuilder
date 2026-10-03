@@ -20277,8 +20277,9 @@ var upstreamRepository = "https://github.com/OpenStickCommunity/GP2040-CE.git";
 var taggedRelease = "v0.7.12";
 var mainTarget = "main";
 var excludedCopySegments = /* @__PURE__ */ new Set(["node_modules", "build"]);
+var byteExactGitConfig = ["-c", "core.autocrlf=false"];
 async function git2(execute, directory, args, timeoutMs = 6e5) {
-  const result = await execute("git", ["-C", directory, ...args], { cwd: directory, timeoutMs, stage: `Git ${args[0]}` });
+  const result = await execute("git", [...byteExactGitConfig, "-C", directory, ...args], { cwd: directory, timeoutMs, stage: `Git ${args[0]}` });
   return result.stdout.trim();
 }
 async function checkoutVerified(execute, directory, commit, release) {
@@ -20307,7 +20308,7 @@ async function materializeLocalMain(execute, source, directory) {
   return { directory, commit, tag: mainTarget, dirty };
 }
 async function materializeUpstreamMain(execute, directory) {
-  await execute("git", ["init", "--quiet", directory], { timeoutMs: 1e4, stage: "Initialize firmware source" });
+  await execute("git", [...byteExactGitConfig, "init", "--quiet", directory], { timeoutMs: 1e4, stage: "Initialize firmware source" });
   await git2(execute, directory, ["remote", "add", "origin", upstreamRepository], 1e4);
   await git2(execute, directory, ["fetch", "--filter=blob:none", "origin", "+refs/heads/main:refs/remotes/origin/main"]);
   const commit = await git2(execute, directory, ["rev-parse", "--verify", "refs/remotes/origin/main^{commit}"], 1e4);
@@ -20318,12 +20319,12 @@ async function materializeUpstreamMain(execute, directory) {
 }
 async function materializeTag(execute, source, directory, release) {
   if (source !== void 0) {
-    await execute("git", ["clone", "--no-hardlinks", "--no-checkout", "--", source, directory], {
+    await execute("git", [...byteExactGitConfig, "clone", "--no-hardlinks", "--no-checkout", "--", source, directory], {
       timeoutMs: 6e5,
       stage: "Clone local firmware source"
     });
   } else {
-    await execute("git", ["init", "--quiet", directory], { timeoutMs: 1e4, stage: "Initialize firmware source" });
+    await execute("git", [...byteExactGitConfig, "init", "--quiet", directory], { timeoutMs: 1e4, stage: "Initialize firmware source" });
     await git2(execute, directory, ["remote", "add", "origin", upstreamRepository], 1e4);
     await git2(execute, directory, ["fetch", "--depth=1", "origin", `refs/tags/${release}:refs/tags/${release}`]);
   }

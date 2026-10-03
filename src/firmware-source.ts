@@ -22,8 +22,11 @@ export interface MaterializeOptions {
   execute?: ProcessExecutor;
 }
 
+// Firmware must be byte-exact regardless of the caller's Git line-ending config.
+const byteExactGitConfig = ['-c', 'core.autocrlf=false'];
+
 async function git(execute: ProcessExecutor, directory: string, args: string[], timeoutMs = 600_000): Promise<string> {
-  const result = await execute('git', ['-C', directory, ...args], { cwd: directory, timeoutMs, stage: `Git ${args[0]}` });
+  const result = await execute('git', [...byteExactGitConfig, '-C', directory, ...args], { cwd: directory, timeoutMs, stage: `Git ${args[0]}` });
   return result.stdout.trim();
 }
 
@@ -57,7 +60,7 @@ async function materializeLocalMain(execute: ProcessExecutor, source: string, di
 }
 
 async function materializeUpstreamMain(execute: ProcessExecutor, directory: string): Promise<MaterializedFirmware> {
-  await execute('git', ['init', '--quiet', directory], { timeoutMs: 10_000, stage: 'Initialize firmware source' });
+  await execute('git', [...byteExactGitConfig, 'init', '--quiet', directory], { timeoutMs: 10_000, stage: 'Initialize firmware source' });
   await git(execute, directory, ['remote', 'add', 'origin', upstreamRepository], 10_000);
   await git(execute, directory, ['fetch', '--filter=blob:none', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
   const commit = await git(execute, directory, ['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}'], 10_000);
@@ -69,11 +72,11 @@ async function materializeUpstreamMain(execute: ProcessExecutor, directory: stri
 
 async function materializeTag(execute: ProcessExecutor, source: string | undefined, directory: string, release: string): Promise<MaterializedFirmware> {
   if (source !== undefined) {
-    await execute('git', ['clone', '--no-hardlinks', '--no-checkout', '--', source, directory], {
+    await execute('git', [...byteExactGitConfig, 'clone', '--no-hardlinks', '--no-checkout', '--', source, directory], {
       timeoutMs: 600_000, stage: 'Clone local firmware source',
     });
   } else {
-    await execute('git', ['init', '--quiet', directory], { timeoutMs: 10_000, stage: 'Initialize firmware source' });
+    await execute('git', [...byteExactGitConfig, 'init', '--quiet', directory], { timeoutMs: 10_000, stage: 'Initialize firmware source' });
     await git(execute, directory, ['remote', 'add', 'origin', upstreamRepository], 10_000);
     await git(execute, directory, ['fetch', '--depth=1', 'origin', `refs/tags/${release}:refs/tags/${release}`]);
   }
