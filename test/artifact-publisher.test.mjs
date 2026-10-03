@@ -101,3 +101,15 @@ test('requires a full lowercase commit for main publication', () => {
   assert.throws(() => publishArtifact({ ...options, commit: 'abc123' }), /commit/);
   assert.throws(() => publishArtifact({ ...options, commit: '../'.repeat(13) + 'a' }), /commit/);
 });
+
+test('validates published firmware against the requested Pico platform', () => {
+  const workingDirectory = join(directory, 'platform tree');
+  const source = join(directory, 'rp2350.uf2');
+  const blocks = [uf2Block(0, 0x10000000), uf2Block(1, 0x10000100)];
+  for (const block of blocks) block.writeUInt32LE(0xe48bff59, 28);
+  writeFileSync(source, Buffer.concat(blocks));
+  const options = { source, workingDirectory, release: 'main', commit: 'd'.repeat(40), board: 'Lipo', buildType: 'release', metadata: {} };
+  assert.throws(() => publishArtifact({ ...options, runId: 'default' }), /RP2040 family/);
+  const result = publishArtifact({ ...options, runId: 'arm', picoPlatform: 'rp2350-arm-s' });
+  assert.equal(result.byteSize, 1024);
+});

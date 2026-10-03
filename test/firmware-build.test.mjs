@@ -19,6 +19,7 @@ const {
   firmwareConfigureArgs,
   nanopbPipConstraint,
   resolveBoardPlatform,
+  picoCompilerForPlatform,
   hostProfile,
 } =   createRequire(import.meta.url)(join(directory, 'firmware-build.cjs'));
 
@@ -59,10 +60,32 @@ test('derives the board platform from the optional board cmake file', () => {
     resolveBoardPlatform('Custom', '# set(PICO_BOARD ignored)\nset(PICO_BOARD "my_board")\nset(PICO_PLATFORM rp2040)\n'),
     { picoBoard: 'my_board', picoPlatform: 'rp2040' },
   );
+  assert.deepEqual(
+    resolveBoardPlatform('PimoroniPicoLipo2XLW', 'set(PICO_BOARD pimoroni_pico_lipo2xl_w)\nset(PICO_PLATFORM rp2350-arm-s)\n'),
+    { picoBoard: 'pimoroni_pico_lipo2xl_w', picoPlatform: 'rp2350-arm-s' },
+  );
   assert.throws(
     () => resolveBoardPlatform('Pico2', 'set(PICO_BOARD pico2)\nset(PICO_PLATFORM rp2350)\n'),
-    /Pico2.*rp2350.*only RP2040/i,
+    /Pico2.*rp2350.*rp2040.*rp2350-arm-s/i,
   );
+  assert.throws(
+    () => resolveBoardPlatform('RiscBoard', 'set(PICO_BOARD pico2)\nset(PICO_PLATFORM rp2350-riscv)\n'),
+    /RiscBoard.*rp2350-riscv/i,
+  );
+});
+
+test('selects the Pico compiler profile for each supported platform', () => {
+  assert.equal(picoCompilerForPlatform('rp2040'), 'pico_arm_cortex_m0plus_gcc');
+  assert.equal(picoCompilerForPlatform('rp2350-arm-s'), 'pico_arm_cortex_m33_gcc');
+  assert.throws(() => picoCompilerForPlatform('rp2350-riscv'), /rp2350-riscv/);
+});
+
+test('configure arguments pass the platform compiler profile', () => {
+  const base = { sourceDirectory: 'src', buildDirectory: 'build', ninja: 'ninja.exe', sdkDirectory: 'sdk', python: 'python.exe', toolsDirectory: 'tools', board: 'PimoroniPicoLipo2XLW', picoBoard: 'pimoroni_pico_lipo2xl_w', picoPlatform: 'rp2350-arm-s' };
+  const args = firmwareConfigureArgs(base);
+  assert.ok(args.includes('-DPICO_PLATFORM=rp2350-arm-s'));
+  assert.ok(args.includes('-DPICO_COMPILER=pico_arm_cortex_m33_gcc'));
+  assert.ok(firmwareConfigureArgs({ ...base, picoPlatform: 'rp2040' }).includes('-DPICO_COMPILER=pico_arm_cortex_m0plus_gcc'));
 });
 
 test('constrains setuptools only when nanopb requirements leave it unpinned', () => {

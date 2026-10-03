@@ -11,6 +11,7 @@ import type { ProcessExecutor, ProcessResult } from './process-runner.js';
 import { executeProcess } from './process-runner.js';
 import { findPicoPrebuiltTools } from './pico-prebuilt-tools.js';
 import type { PicoPrebuiltTools } from './pico-prebuilt-tools.js';
+import type { Uf2Platform } from './uf2.js';
 
 const taggedRelease = 'v0.7.12';
 const cmakeVersion = '4.3.4';
@@ -161,10 +162,24 @@ function cmakeSetValue(cmakeText: string, name: string): string | undefined {
 export function resolveBoardPlatform(board: string, boardCmakeText: string | undefined): BoardPlatform {
   const picoBoard = (boardCmakeText && cmakeSetValue(boardCmakeText, 'PICO_BOARD')) || 'pico';
   const picoPlatform = (boardCmakeText && cmakeSetValue(boardCmakeText, 'PICO_PLATFORM')) || 'rp2040';
-  if (picoPlatform !== 'rp2040') {
-    throw new Error(`Board ${board} targets ${picoPlatform}; GPBuilder currently supports only RP2040 boards.`);
+  if (!supportedPicoPlatforms.includes(picoPlatform)) {
+    throw new Error(`Board ${board} targets ${picoPlatform}; GPBuilder supports PICO_PLATFORM ${supportedPicoPlatforms.join(', ')}.`);
   }
   return { picoBoard, picoPlatform };
+}
+
+const picoCompilers: Record<string, string> = {
+  rp2040: 'pico_arm_cortex_m0plus_gcc',
+  'rp2350-arm-s': 'pico_arm_cortex_m33_gcc',
+};
+const supportedPicoPlatforms = Object.keys(picoCompilers);
+
+export function picoCompilerForPlatform(picoPlatform: string): string {
+  const compiler = picoCompilers[picoPlatform];
+  if (compiler === undefined) {
+    throw new Error(`PICO_PLATFORM ${picoPlatform} is not supported; expected ${supportedPicoPlatforms.join(', ')}.`);
+  }
+  return compiler;
 }
 
 // Older nanopb generators break with setuptools 81+; newer ones pin setuptools themselves.
@@ -182,6 +197,7 @@ export function firmwareConfigureArgs(input: FirmwareConfigureInput): string[] {
   return [
     '-S', input.sourceDirectory, '-B', input.buildDirectory, '-G', 'Ninja', `-DCMAKE_MAKE_PROGRAM=${input.ninja}`,
     '-DCMAKE_BUILD_TYPE=Release', `-DGP2040_BOARDCONFIG=${input.board}`, `-DPICO_BOARD=${input.picoBoard}`, `-DPICO_PLATFORM=${input.picoPlatform}`,
+    `-DPICO_COMPILER=${picoCompilerForPlatform(input.picoPlatform)}`,
     `-DPICO_SDK_PATH=${input.sdkDirectory}`, `-DPython3_EXECUTABLE=${input.python}`,
     '-DSKIP_SUBMODULES=TRUE', '-DSKIP_WEBBUILD=TRUE', ...hostTools,
   ];
@@ -464,7 +480,7 @@ async function runFirmwareBuild(options: FirmwareBuildOptions): Promise<Firmware
       PICO_BOARD: picoBoard,
       PICO_PLATFORM: picoPlatform,
       GP2040_BOARDCONFIG: options.board,
-      PICO_COMPILER: 'pico_arm_cortex_m0plus_gcc',
+      PICO_COMPILER: picoCompilerForPlatform(picoPlatform),
       SKIP_SUBMODULES: 'TRUE',
       SKIP_WEBBUILD: 'TRUE',
       PATH: `${toolchain.armBin}${host.pathDelimiter}${dirname(toolchain.cmake)}${host.pathDelimiter}${dirname(toolchain.ninja)}${host.pathDelimiter}${nativeEnvironment.PATH ?? process.env.PATH ?? ''}`,
@@ -536,7 +552,7 @@ async function runFirmwareBuild(options: FirmwareBuildOptions): Promise<Firmware
       qualification: { platform: host.label, hardwareSmokeTest: false },
     };
     const artifact = publishArtifact({
-      source: artifactSource, workingDirectory, runId, release: options.release, commit: firmwareCommit, board: options.board, buildType: 'release', metadata,
+      source: artifactSource, workingDirectory, runId, release: options.release, commit: firmwareCommit, board: options.board, buildType: 'release', metadata, picoPlatform: picoPlatform as Uf2Platform,
     });
     options.log(`UF2: ${artifact.path}\nSize: ${artifact.byteSize} bytes\nSHA-256: ${artifact.sha256}\nMetadata: ${artifact.metadataPath}`);
     return { sourceCommit: firmwareCommit, selection, artifact };

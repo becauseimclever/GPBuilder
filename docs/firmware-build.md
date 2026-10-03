@@ -1,9 +1,10 @@
-# Building a Flashable RP2040 UF2
+# Building a Flashable RP2040 or RP2350 UF2
 
 **Status: implemented and integration-built on Windows x64 (locally) and Ubuntu
 x64 (through the GitHub Action, building `Pico` and the external-config
 `OpenCore0` on GP2040-CE `main`; see [Host Profiles](#host-profiles)).** The supported builds
-are for **RP2040** board configurations: GP2040-CE **0.7.12** from upstream tag
+are for **RP2040** and **RP2350 (Arm Secure, `rp2350-arm-s`)** board
+configurations: GP2040-CE **0.7.12** from upstream tag
 `v0.7.12`, and development builds of GP2040-CE `main`. The board may be any
 configuration discovered in the firmware's built-in `configs` directory or in a
 caller-supplied configs folder (for example the
@@ -87,8 +88,8 @@ node dist/cli.cjs --firmware ./GP2040-CE --configs ./my-configs --release main -
 release tag `v0.7.12` or `main`. No implicit latest target, arbitrary branch, raw
 commit expression, `latest`, or `nightly` alias is introduced. "Nightly" describes
 building main; it does not add a scheduled workflow or download a prebuilt
-nightly artifact. Main builds support RP2040 boards on supported hosts; RP2350 boards
-such as `Pico2` require RP2350 UF2 validation and remain unsupported.
+nightly artifact. Main builds support RP2040 and `rp2350-arm-s` boards on
+supported hosts (see [Board Platform](#board-platform)).
 
 ### Board Platform
 
@@ -101,9 +102,19 @@ after any `--configs` overlay, mirroring the firmware's root `CMakeLists.txt`:
   `PICO_PLATFORM=rp2040`, the firmware's own defaults. For example the registry's
   `OpenCore0` has no `.cmake` file and builds as `pico`/`rp2040`; `PicoW` sets
   `pico_w`/`rp2040`.
-- Any platform other than `rp2040` fails before dependency setup with an error
-  naming the board and platform. The compiler profile (`pico_arm_cortex_m0plus_gcc`)
-  and UF2 validation are RP2040-only.
+- Supported platforms and their compiler profiles:
+
+  | `PICO_PLATFORM` | `PICO_COMPILER` | UF2 family |
+  | --- | --- | --- |
+  | `rp2040` | `pico_arm_cortex_m0plus_gcc` | `0xe48bff56` (RP2040) |
+  | `rp2350-arm-s` | `pico_arm_cortex_m33_gcc` | `0xe48bff59` (RP2350 Arm Secure) |
+
+- Any other platform fails before dependency setup with an error naming the
+  board and platform. This includes the bare `rp2350` (which the SDK maps to a
+  default core; boards must state `rp2350-arm-s` explicitly) and
+  `rp2350-riscv`, which needs a RISC-V toolchain this build does not provide.
+  The upstream `Pico2` config sets the bare `rp2350` and is therefore rejected
+  until its `.cmake` names `rp2350-arm-s`.
 
 ### Resolve Once, Build One Commit
 
@@ -374,7 +385,8 @@ configuration must include (sample values for `--board Pico`):
 | --- | --- |
 | `GP2040_BOARDCONFIG` | The selected board, e.g. `Pico` |
 | `PICO_BOARD` | Derived SDK board, e.g. `pico` (not `Pico`) |
-| `PICO_PLATFORM` | Derived platform; must be `rp2040` |
+| `PICO_PLATFORM` | Derived platform; `rp2040` or `rp2350-arm-s` |
+| `PICO_COMPILER` | Per platform, see [Board Platform](#board-platform) |
 | `PICO_SDK_PATH` | Verified SDK checkout's absolute path |
 | `CMAKE_BUILD_TYPE` | `Release` |
 | `SKIP_SUBMODULES` | `TRUE`, only after explicit submodule preparation passes |
@@ -396,7 +408,7 @@ The conceptual CMake calls are below. Angle-bracket paths are placeholders for
 owned/verified paths, not literal shell commands to run today:
 
 ```text
-cmake -S <source> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DGP2040_BOARDCONFIG=<Board> -DPICO_BOARD=<sdk-board> -DPICO_PLATFORM=rp2040 -DPICO_SDK_PATH=<sdk> -DSKIP_SUBMODULES=TRUE -DSKIP_WEBBUILD=TRUE
+cmake -S <source> -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release -DGP2040_BOARDCONFIG=<Board> -DPICO_BOARD=<sdk-board> -DPICO_PLATFORM=<platform> -DPICO_COMPILER=<compiler> -DPICO_SDK_PATH=<sdk> -DSKIP_SUBMODULES=TRUE -DSKIP_WEBBUILD=TRUE
 cmake --build <build> --config Release --target GP2040-CE
 ```
 
@@ -426,13 +438,21 @@ the [UF2 specification](https://github.com/microsoft/uf2#file-format):
 - Require a nonempty regular file composed of complete 512-byte blocks.
 - Validate all three magic values in every block, supported flags, payload sizes,
   alignment, block numbering, and a consistent complete block count.
-- Require flashable RP2040-family blocks with the expected family identifier;
-  reject another MCU family, file-container data, or non-flash-only content.
-- Check target addresses and payload ranges against the original Pico's flash
-  capacity and the selected SDK/linker layout. Reject overlaps, out-of-range
-  writes, truncation, and an image without the expected bootable flash region.
-- Correlate the artifact with the just-built ELF/build metadata: a valid RP2040
-  UF2 header alone does not prove the Pico board config or firmware version.
+- Require flashable blocks with the selected platform's family identifier
+  (RP2040 `0xe48bff56`; `rp2350-arm-s` `0xe48bff59`); reject another MCU family,
+  file-container data, or non-flash-only content.
+- Check target addresses and payload ranges against the platform's XIP flash
+  window: 2 MiB from `0x10000000` for RP2040 (the original Pico's capacity), and
+  16 MiB from `0x10000000` for RP2350. Reject overlaps, out-of-range writes,
+  truncation, and an image without the bootable region at `0x10000000`.
+- For `rp2350-arm-s`, accept one optional leading RP2350-E10 *absolute block*
+  exactly as picotool emits it: family `0xe48bff57`, flags `0x2000` (optionally
+  with `0x8000` and the `0x9957e304` ignore-block extension tag), block 0 of 2,
+  256-byte payload of `0xef`. It is excluded from the image's block count,
+  numbering, and address checks, and the reported block count covers only the
+  firmware image. Any other absolute-family block is rejected.
+- Correlate the artifact with the just-built ELF/build metadata: a valid UF2
+  header alone does not prove the board config or firmware version.
 
 Publish only after all stages and validation succeed, under the invocation's
 working directory:
@@ -543,8 +563,11 @@ checks above:
     a missing `<Board>/BoardConfig.h` fails before any build stage, the caller's
     directories are unchanged, and metadata records the external config path.
 12. Test board platform derivation: no `<Board>.cmake` yields `pico`/`rp2040`,
-    `set(PICO_BOARD ...)`/`set(PICO_PLATFORM ...)` values are used, an RP2350
-    platform fails naming the board, and configure arguments, environment,
+    `set(PICO_BOARD ...)`/`set(PICO_PLATFORM ...)` values are used,
+    `rp2350-arm-s` is accepted with `pico_arm_cortex_m33_gcc`, bare `rp2350` and
+    `rp2350-riscv` fail naming the board, RP2350 UF2s (with and without the
+    absolute block) validate while cross-family images are rejected, and
+    configure arguments, environment,
     artifact name, and metadata use the selected board. Execute a real build of a
     board supplied only by an external configs folder (`OpenCore0` from the
     registry on `main`).
@@ -557,8 +580,10 @@ checks above:
     (verified: both boards built and were published as release assets).
 
 The [matrix schema](matrix.md) defines parsing and normalization; matrix execution
-still needs its pending policy decisions documented. RP2040 boards are supported
-from built-in or external configs (both targets); only `Pico` and `OpenCore0`
-have been integration-built, and no image has been hardware-tested. RP2350 boards
-(including Pico2), other releases, caching, automatic host tool installation, and
-flashing automation are not established by this worked example.
+still needs its pending policy decisions documented. RP2040 and `rp2350-arm-s`
+boards are supported from built-in or external configs (both targets); only
+`Pico`, `OpenCore0`, and the registry's `PimoroniPicoLipo2XLW` (RP2350) have been
+integration-built, and no image has been hardware-tested. RISC-V RP2350 builds,
+the upstream `Pico2` config (bare `rp2350`), other releases, caching, automatic
+host tool installation, and flashing automation are not established by this
+worked example.

@@ -513,37 +513,57 @@ var magicStart0 = 171066965;
 var magicStart1 = 2656915799;
 var magicEnd = 179400496;
 var familyIdFlag = 8192;
-var rp2040FamilyId = 3834380118;
-var picoFlashStart = 268435456;
-var picoFlashEnd = 270532608;
+var extensionTagsFlag = 32768;
+var flashStart = 268435456;
 var maxPayloadSize = 476;
-function validateUf2(data) {
+var absoluteFamilyId = 3834380119;
+var absoluteBlockAddress = 285212416;
+var absoluteBlockPayloadSize = 256;
+var absoluteBlockFill = 239;
+var absoluteBlockExtensionTag = 2572673796;
+var platformRules = {
+  rp2040: { chip: "RP2040", familyId: 3834380118, flashEnd: 270532608, flashDescription: "RP2040 Pico flash range" },
+  "rp2350-arm-s": { chip: "RP2350", familyId: 3834380121, flashEnd: 285212672, flashDescription: "RP2350 flash range" }
+};
+function validateUf2(data, platform = "rp2040") {
   if (data.byteLength === 0 || data.byteLength % blockSize !== 0) {
     throw new Error("UF2 must contain complete 512-byte blocks.");
   }
-  const blockCount = data.byteLength / blockSize;
+  const rules = platformRules[platform];
+  const totalBlocks = data.byteLength / blockSize;
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const seenBlocks = /* @__PURE__ */ new Set();
-  const ranges = [];
-  let familyId;
-  let flags;
-  for (let index = 0; index < blockCount; index++) {
+  for (let index = 0; index < totalBlocks; index++) {
     const offset = index * blockSize;
     if (view.getUint32(offset, true) !== magicStart0 || view.getUint32(offset + 4, true) !== magicStart1 || view.getUint32(offset + 508, true) !== magicEnd) {
       throw new Error(`UF2 block ${index} has invalid magic values.`);
     }
+  }
+  let firstImageBlock = 0;
+  if (platform === "rp2350-arm-s" && view.getUint32(28, true) === absoluteFamilyId) {
+    validateAbsoluteBlock(data, view);
+    firstImageBlock = 1;
+  }
+  if (platform === "rp2350-arm-s") {
+    for (let index = firstImageBlock; index < totalBlocks; index++) {
+      if (view.getUint32(index * blockSize + 28, true) === absoluteFamilyId) {
+        throw new Error(`UF2 block ${index} is an absolute block that is not the first block.`);
+      }
+    }
+  }
+  const blockCount = totalBlocks - firstImageBlock;
+  if (blockCount === 0) throw new Error("UF2 does not contain any image blocks.");
+  const seenBlocks = /* @__PURE__ */ new Set();
+  const ranges = [];
+  for (let index = firstImageBlock; index < totalBlocks; index++) {
+    const offset = index * blockSize;
     const blockFlags = view.getUint32(offset + 8, true);
-    if (blockFlags !== familyIdFlag) throw new Error(`UF2 block ${index} has unsupported flags.`);
-    if (flags !== void 0 && blockFlags !== flags) throw new Error("UF2 blocks have inconsistent flags.");
-    flags = blockFlags;
     const address = view.getUint32(offset + 12, true);
     const payloadSize = view.getUint32(offset + 16, true);
     const blockNumber = view.getUint32(offset + 20, true);
     const declaredCount = view.getUint32(offset + 24, true);
     const blockFamilyId = view.getUint32(offset + 28, true);
-    if (blockFamilyId !== rp2040FamilyId) throw new Error(`UF2 block ${index} is not for the RP2040 family.`);
-    if (familyId !== void 0 && blockFamilyId !== familyId) throw new Error("UF2 blocks have inconsistent family IDs.");
-    familyId = blockFamilyId;
+    if (blockFlags !== familyIdFlag) throw new Error(`UF2 block ${index} has unsupported flags.`);
+    if (blockFamilyId !== rules.familyId) throw new Error(`UF2 block ${index} is not for the ${rules.chip} family.`);
     if (declaredCount !== blockCount) throw new Error(`UF2 block ${index} declares an inconsistent block count.`);
     if (blockNumber >= blockCount || seenBlocks.has(blockNumber)) throw new Error("UF2 block numbers must be unique and cover the declared block count.");
     seenBlocks.add(blockNumber);
@@ -552,20 +572,35 @@ function validateUf2(data) {
     }
     if (address % 4 !== 0) throw new Error(`UF2 block ${index} has a target address that is not aligned.`);
     const end = address + payloadSize;
-    if (address < picoFlashStart || end > picoFlashEnd) throw new Error(`UF2 block ${index} is outside the RP2040 Pico flash range.`);
+    if (address < flashStart || end > rules.flashEnd) throw new Error(`UF2 block ${index} is outside the ${rules.flashDescription}.`);
     ranges.push({ start: address, end });
   }
   ranges.sort((left, right) => left.start - right.start);
   for (let index = 1; index < ranges.length; index++) {
     if (ranges[index].start < ranges[index - 1].end) throw new Error("UF2 payload address ranges overlap.");
   }
-  if (ranges[0].start !== picoFlashStart) throw new Error("UF2 does not include the RP2040 Pico bootable flash region.");
+  if (ranges[0].start !== flashStart) throw new Error(`UF2 does not include the ${rules.chip} bootable flash region.`);
   return {
     blockCount,
     addressStart: ranges[0].start,
     addressEnd: ranges.at(-1).end,
-    familyId
+    familyId: rules.familyId
   };
+}
+function validateAbsoluteBlock(data, view) {
+  const flags = view.getUint32(8, true);
+  if (flags !== familyIdFlag && flags !== (familyIdFlag | extensionTagsFlag)) {
+    throw new Error("UF2 absolute block has unsupported flags.");
+  }
+  if (view.getUint32(12, true) !== absoluteBlockAddress || view.getUint32(16, true) !== absoluteBlockPayloadSize) {
+    throw new Error("UF2 absolute block has an unexpected target address or payload size.");
+  }
+  for (let offset = 32; offset < 32 + absoluteBlockPayloadSize; offset++) {
+    if (data[offset] !== absoluteBlockFill) throw new Error("UF2 absolute block payload is not the expected erase pattern.");
+  }
+  if ((flags & extensionTagsFlag) !== 0 && view.getUint32(32 + absoluteBlockPayloadSize, true) !== absoluteBlockExtensionTag) {
+    throw new Error("UF2 absolute block has an unexpected extension tag.");
+  }
 }
 
 // src/artifact-publisher.ts
@@ -604,7 +639,7 @@ function publishArtifact(options) {
   const sourceStats = (0, import_node_fs4.lstatSync)(source);
   if (!sourceStats.isFile()) throw new Error("The UF2 source must be a regular file.");
   const input = (0, import_node_fs4.readFileSync)(source);
-  const validation = validateUf2(input);
+  const validation = validateUf2(input, options.picoPlatform);
   const parent = (0, import_node_path4.resolve)(options.workingDirectory, "artifacts", ...layout.segments);
   (0, import_node_fs4.mkdirSync)(parent, { recursive: true });
   const destination = (0, import_node_path4.join)(parent, options.runId);
@@ -893,10 +928,22 @@ function cmakeSetValue(cmakeText, name) {
 function resolveBoardPlatform(board, boardCmakeText) {
   const picoBoard = boardCmakeText && cmakeSetValue(boardCmakeText, "PICO_BOARD") || "pico";
   const picoPlatform = boardCmakeText && cmakeSetValue(boardCmakeText, "PICO_PLATFORM") || "rp2040";
-  if (picoPlatform !== "rp2040") {
-    throw new Error(`Board ${board} targets ${picoPlatform}; GPBuilder currently supports only RP2040 boards.`);
+  if (!supportedPicoPlatforms.includes(picoPlatform)) {
+    throw new Error(`Board ${board} targets ${picoPlatform}; GPBuilder supports PICO_PLATFORM ${supportedPicoPlatforms.join(", ")}.`);
   }
   return { picoBoard, picoPlatform };
+}
+var picoCompilers = {
+  rp2040: "pico_arm_cortex_m0plus_gcc",
+  "rp2350-arm-s": "pico_arm_cortex_m33_gcc"
+};
+var supportedPicoPlatforms = Object.keys(picoCompilers);
+function picoCompilerForPlatform(picoPlatform) {
+  const compiler = picoCompilers[picoPlatform];
+  if (compiler === void 0) {
+    throw new Error(`PICO_PLATFORM ${picoPlatform} is not supported; expected ${supportedPicoPlatforms.join(", ")}.`);
+  }
+  return compiler;
 }
 function nanopbPipConstraint(requirementsText) {
   if (requirementsText !== void 0 && /^\s*setuptools\b/im.test(requirementsText)) {
@@ -918,6 +965,7 @@ function firmwareConfigureArgs(input) {
     `-DGP2040_BOARDCONFIG=${input.board}`,
     `-DPICO_BOARD=${input.picoBoard}`,
     `-DPICO_PLATFORM=${input.picoPlatform}`,
+    `-DPICO_COMPILER=${picoCompilerForPlatform(input.picoPlatform)}`,
     `-DPICO_SDK_PATH=${input.sdkDirectory}`,
     `-DPython3_EXECUTABLE=${input.python}`,
     "-DSKIP_SUBMODULES=TRUE",
@@ -1175,7 +1223,7 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       PICO_BOARD: picoBoard,
       PICO_PLATFORM: picoPlatform,
       GP2040_BOARDCONFIG: options.board,
-      PICO_COMPILER: "pico_arm_cortex_m0plus_gcc",
+      PICO_COMPILER: picoCompilerForPlatform(picoPlatform),
       SKIP_SUBMODULES: "TRUE",
       SKIP_WEBBUILD: "TRUE",
       PATH: `${toolchain.armBin}${host.pathDelimiter}${(0, import_node_path6.dirname)(toolchain.cmake)}${host.pathDelimiter}${(0, import_node_path6.dirname)(toolchain.ninja)}${host.pathDelimiter}${nativeEnvironment.PATH ?? process.env.PATH ?? ""}`
@@ -1265,7 +1313,8 @@ ${submodules.stdout}`, stderr: submodules.stderr };
       commit: firmwareCommit,
       board: options.board,
       buildType: "release",
-      metadata
+      metadata,
+      picoPlatform
     });
     options.log(`UF2: ${artifact.path}
 Size: ${artifact.byteSize} bytes

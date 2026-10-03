@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { validateUf2 } from './uf2.js';
+import { validateUf2, type Uf2Platform } from './uf2.js';
 
 export interface PublishOptions {
   source: string;
@@ -13,6 +13,8 @@ export interface PublishOptions {
   board: string;
   buildType: string;
   metadata: Record<string, unknown>;
+  /** Target platform used to validate the UF2; defaults to `rp2040`. */
+  picoPlatform?: Uf2Platform;
 }
 
 export interface PublishedArtifact {
@@ -64,7 +66,7 @@ export function publishArtifact(options: PublishOptions): PublishedArtifact {
   const sourceStats = lstatSync(source);
   if (!sourceStats.isFile()) throw new Error('The UF2 source must be a regular file.');
   const input = readFileSync(source);
-  const validation = validateUf2(input);
+  const validation = validateUf2(input, options.picoPlatform);
   const parent = resolve(options.workingDirectory, 'artifacts', ...layout.segments);
   mkdirSync(parent, { recursive: true });
   const destination = join(parent, options.runId);
